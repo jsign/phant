@@ -1,3 +1,6 @@
 [submodule "zig-rlp"]
 	path = zig-rlp
 	url = https://github.com/gballet/zig-rlp.git
+[submodule "verkle-crypto"]
+	path = verkle-crypto
+	url = https://github.com/jsign/verkle-crypto.git
