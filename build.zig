@@ -15,6 +15,13 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const m = b.addModule(
+        "zig-rlp",
+        std.build.CreateModuleOptions{
+            .source_file = .{ .path = "zig-rlp/src/main.zig" },
+        },
+    );
+
     const exe = b.addExecutable(.{
         .name = "phant",
         // In this case the main source file is merely a path, however, in more
@@ -26,6 +33,7 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath("evmone");
     exe.addObjectFile("evmone/libevmone.so.0.10");
     exe.linkLibC();
+    exe.addModule("zig-rlp", m);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -65,6 +73,7 @@ pub fn build(b: *std.Build) void {
     unit_tests.addIncludePath("evmone");
     unit_tests.addObjectFile("evmone/libevmone.so.0.10");
     unit_tests.linkLibC();
+    unit_tests.addModule("zig-rlp", m);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
