@@ -1,5 +1,5 @@
 const std = @import("std");
-const evmonehost = @import("host/host.zig");
+const evmonehost = @import("execution/evmhost.zig");
 const evmc = @cImport({
     @cInclude("evmc/evmc.h");
 });
@@ -7,7 +7,7 @@ const evmone = @cImport({
     @cInclude("evmone.h");
 });
 const verkle = @import("block/verkle.zig");
-const StateDb = @import("host/statedb.zig");
+const StateDb = @import("execution/statedb.zig");
 
 pub fn main() !void {
     const vm = evmone.evmc_create_evmone();
@@ -59,6 +59,7 @@ pub fn main() !void {
 }
 
 test "tests" {
-    _ = @import("host/statedb.zig");
+    _ = @import("execution/statedb.zig");
     _ = @import("block/block.zig");
+    _ = @import("exec-spec-tests/execspectests.zig");
 }
