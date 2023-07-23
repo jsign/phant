@@ -51,3 +51,7 @@ pub fn main() !void {
         std.debug.print("Result: status_code={}, gas_left={}\n", .{ result.status_code, result.gas_left });
     }
 }
+
+test "tests" {
+    _ = @import("host/statedb.zig");
+}
