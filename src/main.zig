@@ -54,4 +54,5 @@ pub fn main() !void {
 
 test "tests" {
     _ = @import("host/statedb.zig");
+    _ = @import("host/block.zig");
 }
