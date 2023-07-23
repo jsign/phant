@@ -5,7 +5,7 @@ const evmc = @cImport({
 const evmone = @cImport({
     @cInclude("evmone.h");
 });
-const StateDb = @import("statedb.zig");
+const StateDb = @import("../statedb/statedb.zig");
 
 const Host = @This();
 
