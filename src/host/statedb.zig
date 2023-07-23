@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const types = @import("types.zig");
+const types = @import("../block/verkle.zig");
 
 pub const StateDb = @This();
 
