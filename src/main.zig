@@ -10,11 +10,13 @@ const verkle = @import("block/verkle.zig");
 const StateDb = @import("statedb/statedb.zig");
 
 pub fn main() !void {
+    std.log.info("Welcome to phant! 🐘", .{});
+
     const vm = evmone.evmc_create_evmone();
     if (vm == null) {
         @panic("Failed to create EVMOne VM");
     }
-    std.debug.print("EVMOne info: name={s}, version={s}, abi_version={d}\n", .{ vm.*.name, vm.*.version, vm.*.abi_version });
+    std.log.info("evmone info: name={s}, version={s}, abi_version={d}", .{ vm.*.name, vm.*.version, vm.*.abi_version });
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
@@ -34,7 +36,7 @@ pub fn main() !void {
         .bytes = [_]u8{0x0} ** 10 ++ [_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x11 },
     };
 
-    const message: evmc.struct_evmc_message = .{
+    const message = evmc.struct_evmc_message{
         .kind = evmc.EVMC_CALL,
         .flags = 0,
         .depth = 0,
@@ -51,10 +53,12 @@ pub fn main() !void {
         },
         .code_address = addr2,
     };
+    std.log.info("0x{} bytecode: {} (PUSH2 0x4142; BALANCE;)", .{ std.fmt.fmtSliceHexLower(&message.recipient.bytes), std.fmt.fmtSliceHexLower(&code) });
+    std.log.info("executing message -> gas={}, sender=0x{}, recipient=0x{}", .{ message.gas, std.fmt.fmtSliceHexLower(&message.sender.bytes), std.fmt.fmtSliceHexLower(&message.recipient.bytes) });
 
     if (vm.*.execute) |exec| {
         var result = exec(vm, @ptrCast(&host.evmc_host), null, evmc.EVMC_SHANGHAI, @ptrCast(&message), @ptrCast(&code), code.len);
-        std.debug.print("Result: status_code={}, gas_left={}\n", .{ result.status_code, result.gas_left });
+        std.log.info("execution result -> status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
     }
 }
 
