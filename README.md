@@ -1,2 +1,3 @@
-# zevmc
-A Zig-friendly EVMC host library
+# phant
+
+An experimental Zig Ethereum client.
