@@ -5,23 +5,32 @@ const evmc = @cImport({
 const evmone = @cImport({
     @cInclude("evmone.h");
 });
+const StateDb = @import("statedb.zig");
 
-pub fn newHost() evmc.struct_evmc_host_interface {
-    return evmc.struct_evmc_host_interface{
-        .account_exists = accountExists,
-        .get_storage = getStorage,
-        .set_storage = setStorage,
-        .get_balance = getBalance,
-        .get_code_size = getCodeSize,
-        .get_code_hash = getCodeHash,
-        .copy_code = copyCode,
-        .selfdestruct = selfDestruct,
-        .call = call,
-        .get_tx_context = getTxContext,
-        .get_block_hash = getBlockHash,
-        .emit_log = emitLog,
-        .access_account = accessAccount,
-        .access_storage = accessStorage,
+const Host = @This();
+
+statedb: *StateDb,
+evmc_host: evmc.struct_evmc_host_interface,
+
+pub fn newHost(statedb: *StateDb) !Host {
+    return Host{
+        .statedb = statedb,
+        .evmc_host = evmc.struct_evmc_host_interface{
+            .account_exists = accountExists,
+            .get_storage = getStorage,
+            .set_storage = setStorage,
+            .get_balance = getBalance,
+            .get_code_size = getCodeSize,
+            .get_code_hash = getCodeHash,
+            .copy_code = copyCode,
+            .selfdestruct = selfDestruct,
+            .call = call,
+            .get_tx_context = getTxContext,
+            .get_block_hash = getBlockHash,
+            .emit_log = emitLog,
+            .access_account = accessAccount,
+            .access_storage = accessStorage,
+        },
     };
 }
 
@@ -43,9 +52,11 @@ fn accountExists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc
 }
 
 fn getStorage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, dest: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.evmc_bytes32 {
+    var host = ctx.? catch unreachable;
+    host.statedb
+        ._ = host;
     _ = dest;
     _ = addr;
-    _ = ctx;
     @panic("TODO");
 }
 fn setStorage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, value: [*c]const evmc.evmc_bytes32, xxx: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.enum_evmc_storage_status {
