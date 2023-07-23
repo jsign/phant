@@ -1,0 +1,3 @@
+[submodule "zig-rlp"]
+	path = zig-rlp
+	url = https://github.com/gballet/zig-rlp.git
