@@ -35,8 +35,34 @@ pub fn new(rlp_bytes: []const u8) !Block {
     return block;
 }
 
-test "decode" {
-    const block = try new(@embedFile("block2.rlp"));
+test "execution-spec-tests" {
+    const FixtureTest = std.json.ArrayHashMap(struct {
+        blocks: []const struct {
+            rlp: []const u8,
+        },
+    });
+
+    const push0_gas_cost = @embedFile("testdata/exec-spec-fixture.json");
+    const ft = try std.json.parseFromSlice(FixtureTest, test_allocator, push0_gas_cost, std.json.ParseOptions{ .ignore_unknown_fields = true });
+    defer ft.deinit();
+
+    var it = ft.value.map.iterator();
+    while (it.next()) |entry| {
+        std.debug.print("Test: {s} ({d} blocks)\n", .{ entry.key_ptr.*, entry.value_ptr.*.blocks.len });
+        for (entry.value_ptr.*.blocks, 0..) |block, i| {
+            var out = try test_allocator.alloc(u8, block.rlp.len * 2);
+            defer test_allocator.free(out);
+            const bytez = try std.fmt.hexToBytes(out, block.rlp[2..]);
+
+            var block_header = std.mem.zeroes(Block);
+            _ = try rlp.deserialize(Block, bytez, &block_header);
+            std.debug.print("\tBlock {d}...OK\n", .{i + 1});
+        }
+    }
+}
+
+test "decode vkt block sample" {
+    const block = try new(@embedFile("testdata/block2.rlp"));
     try std.testing.expectEqualStrings("904e3f9205902a780563d861aaa9cd1d635597ad1893a92d7f83dc5fb51b6eb4", &bytesToHex(block.header.parent_hash));
     try std.testing.expectEqualStrings("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347", &bytesToHex(block.header.uncle_hash));
     try std.testing.expectEqualStrings("0000000000000000000000000000000000000000", &bytesToHex(block.header.fee_recipient));
