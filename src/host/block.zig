@@ -38,5 +38,5 @@ test "decode" {
     const z = try rlp.deserialize(VerkleBlock, block_bytes, &block);
     _ = z;
 
-    std.debug.print("gas_used: {x}\n", .{std.fmt.fmtSliceHexLower(&block.header.gas_used)});
+    std.debug.print("gas_used: {x}\n", .{block.header.gas_used});
 }

@@ -22,12 +22,12 @@ pub fn newStateDb(allocator: Allocator, state_diff: types.StateDiff) !StateDb {
     };
 }
 
-pub fn get(self: *const StateDb, tree_key: types.TreeKey) ?types.TreeValue {
-    return self.db.get(tree_key);
-}
-
 pub fn deinit(self: *StateDb) void {
     self.db.deinit();
+}
+
+pub fn get(self: *const StateDb, tree_key: types.TreeKey) ?types.TreeValue {
+    return self.db.get(tree_key);
 }
 
 var test_allocator = std.testing.allocator;

@@ -6,6 +6,8 @@ const evmc = @cImport({
 const evmone = @cImport({
     @cInclude("evmone.h");
 });
+const types = @import("host/types.zig");
+const StateDb = @import("host/statedb.zig");
 
 pub fn main() !void {
     const vm = evmone.evmc_create_evmone();
@@ -14,7 +16,11 @@ pub fn main() !void {
     }
     std.debug.print("EVMOne info: name={s}, version={s}, abi_version={d}\n", .{ vm.*.name, vm.*.version, vm.*.abi_version });
 
-    var host = evmonehost.newHost();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
+    var statedb = try StateDb.newStateDb(allocator, &[0]types.StemStateDiff{});
+    defer statedb.deinit();
+    var host = evmonehost.newHost(&statedb);
 
     const code = [_]u8{
         0x61, 0x41, 0x42,
@@ -47,7 +53,7 @@ pub fn main() !void {
     };
 
     if (vm.*.execute) |exec| {
-        var result = exec(vm, @ptrCast(&host), null, evmc.EVMC_SHANGHAI, @ptrCast(&message), @ptrCast(&code), code.len);
+        var result = exec(vm, @ptrCast(&host.evmc_host), null, evmc.EVMC_SHANGHAI, @ptrCast(&message), @ptrCast(&code), code.len);
         std.debug.print("Result: status_code={}, gas_left={}\n", .{ result.status_code, result.gas_left });
     }
 }

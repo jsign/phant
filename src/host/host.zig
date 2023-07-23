@@ -12,7 +12,7 @@ const Host = @This();
 statedb: *StateDb,
 evmc_host: evmc.struct_evmc_host_interface,
 
-pub fn newHost(statedb: *StateDb) !Host {
+pub fn newHost(statedb: *StateDb) Host {
     return Host{
         .statedb = statedb,
         .evmc_host = evmc.struct_evmc_host_interface{
@@ -52,9 +52,7 @@ fn accountExists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc
 }
 
 fn getStorage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, dest: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.evmc_bytes32 {
-    var host = ctx.? catch unreachable;
-    host.statedb
-        ._ = host;
+    _ = ctx;
     _ = dest;
     _ = addr;
     @panic("TODO");
@@ -111,7 +109,6 @@ fn emitLog(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_addre
     _ = xxx;
     _ = addr;
     _ = ctx;
-    @panic("TODO");
 }
 fn accessAccount(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.enum_evmc_access_status {
     _ = ctx;
