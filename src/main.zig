@@ -63,8 +63,10 @@ pub fn main() !void {
 }
 
 test "tests" {
+    // TODO: at some point unify entrypoint per package.
     _ = @import("statedb/statedb.zig");
     _ = @import("vm/evmchost.zig");
     _ = @import("block/block.zig");
     _ = @import("exec-spec-tests/execspectests.zig");
+    _ = @import("vm/types.zig");
 }

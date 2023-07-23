@@ -38,6 +38,8 @@ pub const FixtureTest = struct {
     pre: ChainState,
     postState: ChainState,
     sealEngine: []const u8,
+
+    fn run() void {}
 };
 
 pub const ChainState = std.json.ArrayHashMap(AccountState);
