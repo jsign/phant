@@ -4,6 +4,7 @@ const test_allocator = std.testing.allocator;
 const Allocator = std.mem.Allocator;
 const ArrayHashMap = std.ArrayHashMap;
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
+const util = @import("../util/util.zig");
 
 pub const Bytecode = []const u8;
 pub const Address = [32]u8;
@@ -55,7 +56,7 @@ pub const AccountState = struct {
 test "storage" {
     std.testing.log_level = .debug;
 
-    var account = AccountState.init(test_allocator, hex_account_to_bytes("0x010142"), 0, 0, &[_]u8{});
+    var account = AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
     defer account.deinit();
 
     // Set key=0x42, val=0x43, and check get.
@@ -70,11 +71,4 @@ test "storage" {
     // Set existing key=0x42 to new value and get.
     try account.storage_set(0x42, 0x13);
     try std.testing.expect(account.storage_get(0x42) == 0x13);
-}
-
-fn hex_account_to_bytes(comptime account_hex: []const u8) [32]u8 {
-    const account_hex_strip = if (std.mem.startsWith(u8, account_hex, "0x")) account_hex[2..] else account_hex[0..];
-    var account = std.mem.zeroes([32]u8);
-    _ = std.fmt.hexToBytes(&account, account_hex_strip) catch unreachable;
-    return account;
 }
