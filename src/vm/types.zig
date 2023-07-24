@@ -17,6 +17,9 @@ pub const AccountState = struct {
     code: Bytecode,
     storage: std.AutoHashMap(u256, u256),
 
+    // init initializes an account state with the given values.
+    // The bytecode slice isn't owned by the account state, so it must outlive the account state.
+    // deinit() must be called on the account state to free the storage.
     pub fn init(allocator: Allocator, account: Address, nonce: u256, balance: u256, code: Bytecode) AccountState {
         return AccountState{
             .account = account,
@@ -52,7 +55,7 @@ pub const AccountState = struct {
 test "storage" {
     std.testing.log_level = .debug;
 
-    var account = AccountState.init(test_allocator, undefined, 0, 0, &[_]u8{});
+    var account = AccountState.init(test_allocator, hex_account_to_bytes("0x010142"), 0, 0, &[_]u8{});
     defer account.deinit();
 
     // Set key=0x42, val=0x43, and check get.
@@ -67,4 +70,11 @@ test "storage" {
     // Set existing key=0x42 to new value and get.
     try account.storage_set(0x42, 0x13);
     try std.testing.expect(account.storage_get(0x42) == 0x13);
+}
+
+fn hex_account_to_bytes(comptime account_hex: []const u8) [32]u8 {
+    const account_hex_strip = if (std.mem.startsWith(u8, account_hex, "0x")) account_hex[2..] else account_hex[0..];
+    var account = std.mem.zeroes([32]u8);
+    _ = std.fmt.hexToBytes(&account, account_hex_strip) catch unreachable;
+    return account;
 }
