@@ -12,7 +12,7 @@ pub const Address = [32]u8;
 pub const AccountState = struct {
     const log = std.log.scoped(.account_state);
 
-    account: Address,
+    addr: Address,
     nonce: u256,
     balance: u256,
     code: Bytecode,
@@ -21,9 +21,11 @@ pub const AccountState = struct {
     // init initializes an account state with the given values.
     // The bytecode slice isn't owned by the account state, so it must outlive the account state.
     // deinit() must be called on the account state to free the storage.
-    pub fn init(allocator: Allocator, account: Address, nonce: u256, balance: u256, code: Bytecode) AccountState {
+    //
+    // TODO(jsign): consider copying code to make it less brittle, or clarify in comment.
+    pub fn init(allocator: Allocator, addr: Address, nonce: u256, balance: u256, code: Bytecode) AccountState {
         return AccountState{
-            .account = account,
+            .addr = addr,
             .nonce = nonce,
             .balance = balance,
             .code = code,
@@ -48,14 +50,12 @@ pub const AccountState = struct {
     fn log_debug(self: *const AccountState, comptime str: []const u8, args: anytype) void {
         // TODO(jsign): add account printing.
         const fmt = "addr={s}...{s}, " ++ str;
-        const acc_hex = std.fmt.bytesToHex(self.account, std.fmt.Case.lower);
+        const acc_hex = std.fmt.bytesToHex(self.addr, std.fmt.Case.lower);
         log.debug(fmt, .{ acc_hex[0..6], acc_hex[acc_hex.len - 6 ..] } ++ args);
     }
 };
 
 test "storage" {
-    std.testing.log_level = .debug;
-
     var account = AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
     defer account.deinit();
 
