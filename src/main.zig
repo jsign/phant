@@ -63,6 +63,8 @@ pub fn main() !void {
 }
 
 test "tests" {
+    std.testing.log_level = .debug;
+
     // TODO: at some point unify entrypoint per package.
     _ = @import("statedb/statedb.zig");
     _ = @import("vm/evmchost.zig");

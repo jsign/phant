@@ -1,8 +1,9 @@
 const std = @import("std");
 const rlp = @import("zig-rlp");
 const Allocator = std.mem.Allocator;
-var test_allocator = std.testing.allocator;
 const Block = @import("../block/block.zig").Block;
+const statedb = @import("../statedb/statedb.zig");
+const vmtypes = @import("../vm/types.zig");
 
 const HexString = []const u8;
 
@@ -39,7 +40,24 @@ pub const FixtureTest = struct {
     postState: ChainState,
     sealEngine: []const u8,
 
-    fn run() void {}
+    pub fn run(self: *const FixtureTest, allocator: Allocator) !bool {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+
+        var it = self.pre.map.iterator();
+        while (it.next()) |entry| {
+            var account_state = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
+            _ = account_state;
+        }
+
+        it = self.postState.map.iterator();
+        while (it.next()) |entry| {
+            var account_state = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
+            _ = account_state;
+        }
+
+        return false;
+    }
 };
 
 pub const ChainState = std.json.ArrayHashMap(AccountState);
@@ -68,16 +86,52 @@ pub const AccountState = struct {
     balance: HexString,
     code: HexString,
     storage: AccountStorage,
+
+    // TODO(jsign): add init() and add assertions about lengths.
+
+    pub fn to_vm_accountstate(self: *const AccountState, allocator: Allocator, addr: []const u8) !vmtypes.AccountState {
+        const nonce = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.nonce)), std.builtin.Endian.Big);
+
+        // TODO(jsign): helper to avoid repetition?
+        const balance = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.balance)), std.builtin.Endian.Big);
+
+        var code = try allocator.alloc(u8, self.code.len * 2);
+        defer allocator.free(code);
+        _ = try std.fmt.hexToBytes(code, self.code[2..]);
+
+        var account = vmtypes.AccountState.init(allocator, @as(*const [32]u8, @ptrCast(addr)).*, nonce, balance, code);
+        defer account.deinit();
+
+        var it = self.storage.map.iterator();
+        while (it.next()) |entry| {
+            var key_bytes: [32]u8 = std.mem.zeroes([32]u8);
+            var key_bytes_aligned = key_bytes[32 - (entry.key_ptr.*.len - 2) / 2 ..];
+            _ = try std.fmt.hexToBytes(key_bytes_aligned, entry.key_ptr.*[2..]);
+            const key = std.mem.readInt(u256, &key_bytes, std.builtin.Endian.Big);
+
+            var value_bytes: [32]u8 = std.mem.zeroes([32]u8);
+            var value_bytes_aligned = value_bytes[32 - (entry.value_ptr.*.len - 2) / 2 ..];
+            _ = try std.fmt.hexToBytes(value_bytes_aligned, entry.value_ptr.*[2..]);
+            const value = std.mem.readInt(u256, &value_bytes, std.builtin.Endian.Big);
+
+            try account.storage_set(key, value);
+        }
+
+        return account;
+    }
 };
 
 const AccountStorage = std.json.ArrayHashMap(HexString);
 
+var test_allocator = std.testing.allocator;
 test "execution-spec-tests" {
     var ft = try Fixture.new_from_bytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
     while (it.next()) |entry| {
+        const ok = try entry.value_ptr.*.run(test_allocator);
+        _ = ok;
         for (entry.value_ptr.*.blocks) |block| {
             var out = try test_allocator.alloc(u8, block.rlp.len * 2);
             defer test_allocator.free(out);
