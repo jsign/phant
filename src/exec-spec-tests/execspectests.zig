@@ -1,10 +1,13 @@
 const std = @import("std");
 const rlp = @import("zig-rlp");
 const Allocator = std.mem.Allocator;
-const Block = @import("../block/block.zig").Block;
-const statedb = @import("../statedb/statedb.zig");
+const types = @import("../types/types.zig");
+const Address = types.Address;
+const AccountState = types.AccountState;
+const Transaction = types.Transaction;
+const Block = types.Block;
 const vm = @import("../vm/vm.zig");
-const vmtypes = vm.types;
+const StateDB = vm.StateDB;
 
 const HexString = []const u8;
 
@@ -50,7 +53,7 @@ pub const FixtureTest = struct {
         // 1. We parse the account state "prestate" from the test, and create our
         // statedb with this initial state of accounts.
         var accounts_state = blk: {
-            var accounts_state = try allocator.alloc(vmtypes.AccountState, self.pre.map.count());
+            var accounts_state = try allocator.alloc(AccountState, self.pre.map.count());
             var it = self.pre.map.iterator();
             var i: usize = 0;
             while (it.next()) |entry| {
@@ -59,13 +62,13 @@ pub const FixtureTest = struct {
             }
             break :blk accounts_state;
         };
-        var db = try statedb.init(allocator, accounts_state);
+        var db = try StateDB.init(allocator, accounts_state);
 
         // 2. Execute blocks.
         for (self.blocks) |block| {
             var evm = vm.init(&db);
 
-            var txns = try allocator.alloc(vmtypes.Transaction, block.transactions.len);
+            var txns = try allocator.alloc(Transaction, block.transactions.len);
             defer allocator.free(txns);
             for (block.transactions, 0..) |tx_hex, i| {
                 txns[i] = try tx_hex.to_vm_transaction(allocator);
@@ -118,22 +121,22 @@ pub const TransactionHex = struct {
     data: HexString,
     gasLimit: HexString,
 
-    pub fn to_vm_transaction(self: *const TransactionHex, allocator: Allocator) !vmtypes.Transaction {
+    pub fn to_vm_transaction(self: *const TransactionHex, allocator: Allocator) !Transaction {
         const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
         const chain_id = try std.fmt.parseInt(u256, self.chainId[2..], 16);
         const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
         const gas_price = try std.fmt.parseUnsigned(u256, self.gasPrice[2..], 16);
         const value = try std.fmt.parseUnsigned(u256, self.value[2..], 16);
-        var to: ?vmtypes.Address = null;
+        var to: ?Address = null;
         if (self.to[2..].len != 0) {
-            to = std.mem.zeroes(vmtypes.Address);
+            to = std.mem.zeroes(Address);
             _ = try std.fmt.hexToBytes(&to.?, self.to[2..]);
         }
         var data = try allocator.alloc(u8, self.data[2..].len / 2);
         _ = try std.fmt.hexToBytes(data, self.data[2..]);
         const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
 
-        return vmtypes.Transaction.init(type_, chain_id, nonce, gas_price, value, to, data, gas_limit);
+        return Transaction.init(type_, chain_id, nonce, gas_price, value, to, data, gas_limit);
     }
 };
 
@@ -145,7 +148,7 @@ pub const AccountStateHex = struct {
 
     // TODO(jsign): add init() and add assertions about lengths.
 
-    pub fn to_vm_accountstate(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !vmtypes.AccountState {
+    pub fn to_vm_accountstate(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
         const nonce = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.nonce)), std.builtin.Endian.Big);
 
         // TODO(jsign): helper to avoid repetition?
@@ -156,10 +159,10 @@ pub const AccountStateHex = struct {
         //defer allocator.free(code);
         _ = try std.fmt.hexToBytes(code, self.code[2..]);
 
-        var addr: vmtypes.Address = undefined;
+        var addr: Address = undefined;
         _ = try std.fmt.hexToBytes(&addr, addr_hex[2..]);
 
-        var account = vmtypes.AccountState.init(allocator, addr, nonce, balance, code);
+        var account = AccountState.init(allocator, addr, nonce, balance, code);
         defer account.deinit();
 
         var it = self.storage.map.iterator();

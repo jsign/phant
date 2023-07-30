@@ -5,35 +5,39 @@ const evmc = @cImport({
     @cInclude("evmc/evmc.h");
 });
 const std = @import("std");
-pub const types = @import("types.zig");
+const types = @import("../types/types.zig");
 const Transaction = types.Transaction;
 const AccountState = types.AccountState;
 const Bytecode = types.Transaction;
 const Address = types.Address;
-const StateDb = @import("../statedb/statedb.zig");
-const Host = @import("evmchost.zig");
+const Host = @import("host.zig");
+
+pub const StateDB = @import("statedb/statedb.zig");
+
 const log = std.log.scoped(.vm);
+
+const VM = @This();
 
 host: Host,
 evm: [*c]evmone.evmc_vm,
 
-pub fn init(statedb: *StateDb) @This() {
+pub fn init(statedb: *StateDB) VM {
     const evm = evmone.evmc_create_evmone();
     var host = Host.init(statedb);
-    return @This(){
+    return VM{
         .host = host,
         .evm = evm,
     };
 }
 
-pub fn run_txns(self: *const @This(), txns: []Transaction) !void {
+pub fn run_txns(self: *const VM, txns: []Transaction) !void {
     // TODO: stashing area.
     for (txns) |txn| {
         self.run_txn(txn);
     }
 }
 
-fn run_txn(self: *const @This(), txn: Transaction) void {
+fn run_txn(self: *const VM, txn: Transaction) void {
     const recipient_code: struct { code: [*c]const u8, size: usize } = blk: {
         if (txn.to == null) {
             break :blk .{ .code = null, .size = 0 };

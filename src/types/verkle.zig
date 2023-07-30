@@ -1,4 +1,4 @@
-const Bytes31 = @import("types.zig").Bytes31;
+const Bytes31 = @import("base.zig").Bytes31;
 
 // Verkle Tree types.
 pub const Stem = [31]u8;

@@ -5,13 +5,14 @@ const evmc = @cImport({
 const evmone = @cImport({
     @cInclude("evmone.h");
 });
-const StateDb = @import("../statedb/statedb.zig");
+const StateDB = @import("vm.zig").StateDB;
+
 const log = std.log.scoped(.evmchost);
 
-statedb: *StateDb,
+statedb: *StateDB,
 evmc_host: evmc.struct_evmc_host_interface,
 
-pub fn init(statedb: *StateDb) @This() {
+pub fn init(statedb: *StateDB) @This() {
     return @This(){
         .statedb = statedb,
         .evmc_host = evmc.struct_evmc_host_interface{

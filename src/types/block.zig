@@ -3,18 +3,18 @@ const rlp = @import("zig-rlp");
 const types = @import("types.zig");
 var test_allocator = std.testing.allocator;
 
-pub const Block = struct {
-    header: BlockHeader,
-};
+const BYTES_PER_LOGS_BLOOM = 256;
+
+header: BlockHeader,
 
 pub const BlockHeader = struct {
     parent_hash: types.Hash32,
     uncle_hash: types.Hash32,
-    fee_recipient: types.ExecutionAddress,
+    fee_recipient: types.Address,
     state_root: types.Bytes32,
     transactions_root: types.Bytes32,
     receipts_root: types.Bytes32,
-    logs_bloom: [types.BYTES_PER_LOGS_BLOOM]u8,
+    logs_bloom: [BYTES_PER_LOGS_BLOOM]u8,
     prev_randao: types.Bytes32,
     block_number: u64,
     gas_limit: u64,
@@ -28,9 +28,9 @@ pub const BlockHeader = struct {
 
 // new returns a new Block deserialized from rlp_bytes.
 // The returned Block has references to the rlp_bytes slice.
-pub fn new(rlp_bytes: []const u8) !Block {
-    var block: Block = std.mem.zeroes(Block);
-    _ = try rlp.deserialize(Block, rlp_bytes, &block);
+pub fn new(rlp_bytes: []const u8) !@This() {
+    var block = std.mem.zeroes(@This());
+    _ = try rlp.deserialize(@This(), rlp_bytes, &block);
     // TODO: consider strict checking of returned deserialized length vs rlp_bytes.len.
     return block;
 }

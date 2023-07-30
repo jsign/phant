@@ -1,13 +1,14 @@
 const std = @import("std");
-const evmonehost = @import("vm/evmchost.zig");
+const evmonehost = @import("vm/host.zig");
 const evmc = @cImport({
     @cInclude("evmc/evmc.h");
 });
 const evmone = @cImport({
     @cInclude("evmone.h");
 });
-const vmtypes = @import("vm/vm.zig").types;
-const StateDb = @import("statedb/statedb.zig");
+const types = @import("types/types.zig");
+const AccountState = types.AccountState;
+const StateDB = @import("vm/vm.zig").StateDB;
 
 pub fn main() !void {
     std.log.info("Welcome to phant! 🐘", .{});
@@ -20,7 +21,7 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
-    var statedb = try StateDb.init(allocator, &[_]vmtypes.AccountState{});
+    var statedb = try StateDB.init(allocator, &[_]AccountState{});
     var host = evmonehost.init(&statedb);
 
     const code = [_]u8{
@@ -65,10 +66,7 @@ test "tests" {
     std.testing.log_level = .debug;
 
     // TODO: at some point unify entrypoint per package.
-    _ = @import("statedb/statedb.zig");
-    _ = @import("vm/evmchost.zig");
-    _ = @import("block/block.zig");
     _ = @import("exec-spec-tests/execspectests.zig");
-    _ = @import("vm/types.zig");
+    _ = @import("types/types.zig");
     _ = @import("vm/vm.zig");
 }
