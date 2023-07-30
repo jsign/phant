@@ -6,7 +6,7 @@ const evmc = @cImport({
 const evmone = @cImport({
     @cInclude("evmone.h");
 });
-const verkle = @import("block/verkle.zig");
+const vmtypes = @import("vm/vm.zig").types;
 const StateDb = @import("statedb/statedb.zig");
 
 pub fn main() !void {
@@ -20,9 +20,8 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
-    var statedb = try StateDb.newStateDb(allocator, &[0]verkle.StemStateDiff{});
-    defer statedb.deinit();
-    var host = evmonehost.newHost(&statedb);
+    var statedb = try StateDb.init(allocator, &[_]vmtypes.AccountState{});
+    var host = evmonehost.init(&statedb);
 
     const code = [_]u8{
         0x61, 0x41, 0x42,
@@ -71,4 +70,5 @@ test "tests" {
     _ = @import("block/block.zig");
     _ = @import("exec-spec-tests/execspectests.zig");
     _ = @import("vm/types.zig");
+    _ = @import("vm/vm.zig");
 }
