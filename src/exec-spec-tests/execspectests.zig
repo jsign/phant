@@ -3,7 +3,8 @@ const rlp = @import("zig-rlp");
 const Allocator = std.mem.Allocator;
 const Block = @import("../block/block.zig").Block;
 const statedb = @import("../statedb/statedb.zig");
-const vmtypes = @import("../vm/types.zig");
+const vm = @import("../vm/vm.zig");
+const vmtypes = vm.types;
 
 const HexString = []const u8;
 
@@ -31,6 +32,7 @@ pub const FixtureTest = struct {
     blocks: []const struct {
         rlp: []const u8,
         blockHeader: BlockHeaderHex,
+        transactions: []TransactionHex,
     },
     genesisBlockHeader: BlockHeaderHex,
     genesisRLP: HexString,
@@ -40,17 +42,40 @@ pub const FixtureTest = struct {
     postState: ChainState,
     sealEngine: []const u8,
 
-    pub fn run(self: *const FixtureTest, allocator: Allocator) !bool {
-        var arena = std.heap.ArenaAllocator.init(allocator);
+    pub fn run(self: *const FixtureTest, base_allocator: Allocator) !bool {
+        var arena = std.heap.ArenaAllocator.init(base_allocator);
         defer arena.deinit();
+        var allocator = arena.allocator();
 
-        var it = self.pre.map.iterator();
-        while (it.next()) |entry| {
-            var account_state = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
-            _ = account_state;
+        // 1. We parse the account state "prestate" from the test, and create our
+        // statedb with this initial state of accounts.
+        var accounts_state = blk: {
+            var accounts_state = try allocator.alloc(vmtypes.AccountState, self.pre.map.count());
+            var it = self.pre.map.iterator();
+            var i: usize = 0;
+            while (it.next()) |entry| {
+                accounts_state[i] = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
+                i = i + 1;
+            }
+            break :blk accounts_state;
+        };
+        var db = try statedb.init(allocator, accounts_state);
+
+        // 2. Execute blocks.
+        for (self.blocks) |block| {
+            var evm = vm.init(&db);
+
+            var txns = try allocator.alloc(vmtypes.Transaction, block.transactions.len);
+            defer allocator.free(txns);
+            for (block.transactions, 0..) |tx_hex, i| {
+                txns[i] = try tx_hex.to_vm_transaction(allocator);
+            }
+
+            try evm.run_txns(txns);
         }
 
-        it = self.postState.map.iterator();
+        // 3. Verify that the post state matches what the fixture `postState` claims is true.
+        var it = self.postState.map.iterator();
         while (it.next()) |entry| {
             var account_state = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
             _ = account_state;
@@ -60,7 +85,7 @@ pub const FixtureTest = struct {
     }
 };
 
-pub const ChainState = std.json.ArrayHashMap(AccountState);
+pub const ChainState = std.json.ArrayHashMap(AccountStateHex);
 
 pub const BlockHeaderHex = struct {
     parentHash: HexString,
@@ -81,38 +106,66 @@ pub const BlockHeaderHex = struct {
     hash: HexString,
 };
 
-pub const AccountState = struct {
+pub const TransactionHex = struct {
+    type: HexString,
+    chainId: HexString,
+    nonce: HexString,
+    gasPrice: HexString,
+    value: HexString,
+    to: HexString,
+    protected: bool,
+    secretKey: HexString,
+    data: HexString,
+    gasLimit: HexString,
+
+    pub fn to_vm_transaction(self: *const TransactionHex, allocator: Allocator) !vmtypes.Transaction {
+        const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
+        const chain_id = try std.fmt.parseInt(u256, self.chainId[2..], 16);
+        const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
+        const gas_price = try std.fmt.parseUnsigned(u256, self.gasPrice[2..], 16);
+        const value = try std.fmt.parseUnsigned(u256, self.value[2..], 16);
+        var to: ?vmtypes.Address = null;
+        if (self.to[2..].len != 0) {
+            to = std.mem.zeroes(vmtypes.Address);
+            _ = try std.fmt.hexToBytes(&to.?, self.to[2..]);
+        }
+        var data = try allocator.alloc(u8, self.data[2..].len / 2);
+        _ = try std.fmt.hexToBytes(data, self.data[2..]);
+        const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
+
+        return vmtypes.Transaction.init(type_, chain_id, nonce, gas_price, value, to, data, gas_limit);
+    }
+};
+
+pub const AccountStateHex = struct {
     nonce: HexString,
     balance: HexString,
     code: HexString,
-    storage: AccountStorage,
+    storage: AccountStorageHex,
 
     // TODO(jsign): add init() and add assertions about lengths.
 
-    pub fn to_vm_accountstate(self: *const AccountState, allocator: Allocator, addr: []const u8) !vmtypes.AccountState {
+    pub fn to_vm_accountstate(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !vmtypes.AccountState {
         const nonce = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.nonce)), std.builtin.Endian.Big);
 
         // TODO(jsign): helper to avoid repetition?
         const balance = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.balance)), std.builtin.Endian.Big);
 
-        var code = try allocator.alloc(u8, self.code.len * 2);
-        defer allocator.free(code);
+        var code = try allocator.alloc(u8, self.code[2..].len * 2);
+        // TODO(jsign): check this.
+        //defer allocator.free(code);
         _ = try std.fmt.hexToBytes(code, self.code[2..]);
 
-        var account = vmtypes.AccountState.init(allocator, @as(*const [32]u8, @ptrCast(addr)).*, nonce, balance, code);
+        var addr: vmtypes.Address = undefined;
+        _ = try std.fmt.hexToBytes(&addr, addr_hex[2..]);
+
+        var account = vmtypes.AccountState.init(allocator, addr, nonce, balance, code);
         defer account.deinit();
 
         var it = self.storage.map.iterator();
         while (it.next()) |entry| {
-            var key_bytes: [32]u8 = std.mem.zeroes([32]u8);
-            var key_bytes_aligned = key_bytes[32 - (entry.key_ptr.*.len - 2) / 2 ..];
-            _ = try std.fmt.hexToBytes(key_bytes_aligned, entry.key_ptr.*[2..]);
-            const key = std.mem.readInt(u256, &key_bytes, std.builtin.Endian.Big);
-
-            var value_bytes: [32]u8 = std.mem.zeroes([32]u8);
-            var value_bytes_aligned = value_bytes[32 - (entry.value_ptr.*.len - 2) / 2 ..];
-            _ = try std.fmt.hexToBytes(value_bytes_aligned, entry.value_ptr.*[2..]);
-            const value = std.mem.readInt(u256, &value_bytes, std.builtin.Endian.Big);
+            const key = try std.fmt.parseUnsigned(u256, entry.key_ptr.*[2..], 16);
+            const value = try std.fmt.parseUnsigned(u256, entry.value_ptr.*[2..], 16);
 
             try account.storage_set(key, value);
         }
@@ -121,7 +174,7 @@ pub const AccountState = struct {
     }
 };
 
-const AccountStorage = std.json.ArrayHashMap(HexString);
+const AccountStorageHex = std.json.ArrayHashMap(HexString);
 
 var test_allocator = std.testing.allocator;
 test "execution-spec-tests" {
