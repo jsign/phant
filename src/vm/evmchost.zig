@@ -6,14 +6,13 @@ const evmone = @cImport({
     @cInclude("evmone.h");
 });
 const StateDb = @import("../statedb/statedb.zig");
-
-const Host = @This();
+const log = std.log.scoped(.evmchost);
 
 statedb: *StateDb,
 evmc_host: evmc.struct_evmc_host_interface,
 
-pub fn newHost(statedb: *StateDb) Host {
-    return Host{
+pub fn init(statedb: *StateDb) @This() {
+    return @This(){
         .statedb = statedb,
         .evmc_host = evmc.struct_evmc_host_interface{
             .account_exists = accountExists,
@@ -68,7 +67,7 @@ fn setStorage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_ad
 fn getBalance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_uint256be {
     _ = ctx;
     const addr_hex = std.fmt.bytesToHex(addr.*.bytes, std.fmt.Case.lower);
-    std.log.debug("evmc call -> getBalance(0x{s})", .{addr_hex});
+    log.debug("evmc call -> getBalance(0x{s})", .{addr_hex});
 
     var beval: [32]u8 = undefined;
     std.mem.writeIntSliceBig(u256, &beval, 142);
@@ -113,7 +112,7 @@ fn emitLog(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_addre
 fn accessAccount(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.enum_evmc_access_status {
     _ = ctx;
     const addr_hex = std.fmt.bytesToHex(addr.*.bytes, std.fmt.Case.lower);
-    std.log.debug("evmc called -> accessAccount(0x{s})", .{addr_hex});
+    log.debug("evmc called -> accessAccount(0x{s})", .{addr_hex});
     return evmc.EVMC_ACCESS_COLD;
 }
 fn accessStorage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, value: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.enum_evmc_access_status {
