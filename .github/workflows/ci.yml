@@ -1,0 +1,51 @@
+name: Lint and test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Zig
+      uses: korandoru/setup-zig@v1
+      with:
+        zig-version: master
+
+    - name: Display zig compiler version
+      run:  zig version
+
+    - name: Build
+      run: LD_LIBRARY_PATH=$PWD/evmone zig build
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Zig
+      uses: korandoru/setup-zig@v1
+      with:
+        zig-version: master
+
+    - name: Lint
+      run: LD_LIBRARY_PATH=$PWD/evmone zig fmt --check src/*.zig
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Zig
+      uses: korandoru/setup-zig@v1
+      with:
+        zig-version: master
+
+    - name: Test
+      run: LD_LIBRARY_PATH=$PWD/evmone zig build test
