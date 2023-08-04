@@ -1,4 +1,5 @@
 const std = @import("std");
+const LazyPath = std.Build.LazyPath;
 
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
@@ -30,8 +31,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addIncludePath("evmone");
-    exe.addObjectFile("evmone/libevmone.so.0.10");
+    exe.addIncludePath(LazyPath{ .path = "evmone" });
+    exe.addObjectFile(LazyPath{ .path = "evmone/libevmone.so.0.10" });
     exe.linkLibC();
     exe.addModule("zig-rlp", m);
 
@@ -70,8 +71,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    unit_tests.addIncludePath("evmone");
-    unit_tests.addObjectFile("evmone/libevmone.so.0.10");
+    unit_tests.addIncludePath(LazyPath{ .path = "evmone" });
+    unit_tests.addObjectFile(LazyPath{ .path = "evmone/libevmone.so.0.10" });
+
     unit_tests.linkLibC();
     unit_tests.addModule("zig-rlp", m);
 
