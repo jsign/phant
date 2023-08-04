@@ -1,0 +1,10 @@
+.{
+    .name = "zig-rlp",
+    .version = "0.0.1-beta-0",
+    .dependencies = .{
+        .@"zig-rlp" = .{
+            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.0.1-beta-0.tar.gz",
+            .hash = "122000e0811d6cb4758f6122b1de2d384efa32b9b2714caec2236f6b34b0529d699c",
+        },
+    },
+}

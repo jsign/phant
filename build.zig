@@ -11,17 +11,12 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
+    const mod_rlp = b.dependency("zig-rlp", .{}).module("zig-rlp");
+
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
-
-    const m = b.addModule(
-        "zig-rlp",
-        std.build.CreateModuleOptions{
-            .source_file = .{ .path = "zig-rlp/src/main.zig" },
-        },
-    );
 
     const exe = b.addExecutable(.{
         .name = "phant",
@@ -34,7 +29,7 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(LazyPath{ .path = "evmone" });
     exe.addObjectFile(LazyPath{ .path = "evmone/libevmone.so.0.10" });
     exe.linkLibC();
-    exe.addModule("zig-rlp", m);
+    exe.addModule("zig-rlp", mod_rlp);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -75,7 +70,7 @@ pub fn build(b: *std.Build) void {
     unit_tests.addObjectFile(LazyPath{ .path = "evmone/libevmone.so.0.10" });
 
     unit_tests.linkLibC();
-    unit_tests.addModule("zig-rlp", m);
+    unit_tests.addModule("zig-rlp", mod_rlp);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;
