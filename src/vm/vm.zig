@@ -61,41 +61,41 @@ pub const VM = struct {
         // TODO(jsign): check freeing evmone instance.
     }
 
-    pub fn run_txns(self: *VM, txns: []Transaction) !void {
+    pub fn run_txns(self: *VM, txns: []const Transaction) void {
         // TODO: stashing area.
         for (txns) |txn| {
             self.run_txn(txn);
         }
     }
 
-    fn run_txn(self: *VM, txn: Transaction) void {
+    pub fn run_txn(self: *VM, txn: Transaction) void {
+        log.debug("running tx", .{}); // TODO(jsign): add txn hash when available.
+
         var recipient_code: Bytecode = &[_]u8{};
         if (txn.to) |to| {
-            const recipient_account = self.statedb.get(to);
-            if (recipient_account) |account| {
+            if (self.statedb.get(to)) |account| {
                 recipient_code = account.code;
             }
         }
 
-        log.debug("running tx", .{}); // TODO(jsign): add txn hash when available.
         const message = evmc.struct_evmc_message{
-            .kind = evmc.EVMC_CALL,
+            .kind = evmc.EVMC_CALL, // TODO(jsign): generalize.
             .flags = evmc.EVMC_STATIC,
             .depth = 0,
-            // TODO(jsign): why evmc expects a i64 for gas?
-            .gas = @intCast(txn.gas_limit),
+            .gas = @intCast(txn.gas_limit), // TODO(jsign): why evmc expects a i64 for gas instead of u64?
             .recipient = util.to_evmc_address(txn.to),
-            // TODO(jsign): create evmc helper module.
             .sender = util.to_evmc_address(txn.get_from()),
             .input_data = txn.data.ptr,
             .input_size = txn.data.len,
-            .value = .{
-                .bytes = [_]u8{0} ** 32, // TODO: fix this
+            .value = blk: {
+                var txn_value: [32]u8 = undefined;
+                std.mem.writeIntSliceBig(u256, &txn_value, txn.value);
+                break :blk .{ .bytes = txn_value };
             },
             .create2_salt = .{
-                .bytes = [_]u8{0} ** 32, // TODO: fix this
+                .bytes = [_]u8{0} ** 32, // TODO: fix this.
             },
-            .code_address = util.to_evmc_address(txn.to),
+            .code_address = util.to_evmc_address(txn.to), // TODO: fix this when .kind is generalized.
         };
 
         // Initialize the execution context.
@@ -103,11 +103,17 @@ pub const VM = struct {
             .address = txn.get_from(),
         };
 
-        if (self.evm.*.execute) |exec| {
-            // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
-            var result = exec(self.evm, @ptrCast(&self.host), @ptrCast(self), evmc.EVMC_SHANGHAI, @ptrCast(&message), recipient_code.ptr, recipient_code.len);
-            log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
-        } else unreachable;
+        // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
+        var result = self.evm.*.execute.?(
+            self.evm,
+            @ptrCast(&self.host),
+            @ptrCast(self),
+            evmc.EVMC_SHANGHAI,
+            @ptrCast(&message),
+            recipient_code.ptr,
+            recipient_code.len,
+        );
+        log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
     }
 
     // ### EVMC Host Interface ###
