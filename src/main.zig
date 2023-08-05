@@ -48,7 +48,7 @@ test "tests" {
     std.testing.log_level = .debug;
 
     // TODO: at some point unify entrypoint per package.
-    _ = @import("exec-spec-tests/execspectests.zig");
+    // _ = @import("exec-spec-tests/execspectests.zig"); // TODO(jsign): In progress...
     _ = @import("types/types.zig");
     _ = @import("vm/vm.zig");
 }

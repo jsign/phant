@@ -48,7 +48,7 @@ pub fn storage_set(self: *AccountState, key: u256, value: u256) !void {
 
 const test_allocator = std.testing.allocator;
 test "storage" {
-    var account = AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
+    var account = try AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
     defer account.deinit();
 
     // Set key=0x42, val=0x43, and check get.

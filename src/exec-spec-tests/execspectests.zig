@@ -75,7 +75,7 @@ pub const FixtureTest = struct {
                 txns[i] = try tx_hex.to_vm_transaction(allocator);
             }
 
-            try evm.run_txns(txns);
+            evm.run_txns(txns);
         }
 
         // 3. Verify that the post state matches what the fixture `postState` claims is true.
@@ -163,7 +163,7 @@ pub const AccountStateHex = struct {
         var addr: Address = undefined;
         _ = try std.fmt.hexToBytes(&addr, addr_hex[2..]);
 
-        var account = AccountState.init(allocator, addr, nonce, balance, code);
+        var account = try AccountState.init(allocator, addr, nonce, balance, code);
         defer account.deinit();
 
         var it = self.storage.map.iterator();
