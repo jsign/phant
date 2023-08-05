@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("types/types.zig");
 const AccountState = types.AccountState;
-const Address = types.AccountState;
+const Address = types.Address;
 const VM = @import("vm/vm.zig").VM;
 const StateDB = @import("vm/statedb.zig");
 const Transaction = @import("types/types.zig").Transaction;
@@ -12,57 +12,36 @@ pub fn main() !void {
 
     std.log.info("Welcome to phant! 🐘", .{});
 
-    var statedb = try StateDB.init(allocator, &[_]AccountState{});
-    const vm = VM.init(&statedb);
-    _ = vm;
-
+    // Create some dummy transaction.
     const txn = Transaction{
         .type = 0,
         .chain_id = 1,
         .nonce = 0,
         .gas_price = 10,
         .value = 0,
-        .to = comptime blk: {
-            var addr: Address = undefined;
-            _ = std.fmt.hexToBytes(&addr, "4200000000000000000000000000000000000000000000000000000000000041");
-
-            break :blk addr;
-        },
+        .to = [_]u8{0} ** 18 ++ [_]u8{ 0x41, 0x42 },
         .data = &[_]u8{},
         .gas_limit = 10_000,
     };
-    _ = txn;
 
+    // Create the corresponding AccountState for txn.to, in particular with relevant bytecode
+    // so the transaction can be properly executed.
     const code = [_]u8{
         0x61, 0x41, 0x42, // PUSH2 0x4142
-        // 0x31, // BALANCE
+        0x31, // BALANCE
     };
-    _ = code;
+    var account_state = try AccountState.init(allocator, txn.to.?, 0, 10_000, &code);
+    defer account_state.deinit();
 
-    //     const message = evmc.struct_evmc_message{
-    //         .kind = evmc.EVMC_CALL,
-    //         .flags = 0,
-    //         .depth = 0,
-    //         .gas = 10_000,
-    //         .recipient = addr2,
-    //         .sender = addr,
-    //         .input_data = &[_]u8{},
-    //         .input_size = 0,
-    //         .value = .{
-    //             .bytes = [_]u8{0} ** 32,
-    //         },
-    //         .create2_salt = .{
-    //             .bytes = [_]u8{0} ** 32,
-    //         },
-    //         .code_address = addr2,
-    //     };
-    //     std.log.info("0x{} bytecode: {} (PUSH2 0x4142; BALANCE;)", .{ std.fmt.fmtSliceHexLower(&message.recipient.bytes), std.fmt.fmtSliceHexLower(&code) });
-    //     std.log.info("executing message -> gas={}, sender=0x{}, recipient=0x{}", .{ message.gas, std.fmt.fmtSliceHexLower(&message.sender.bytes), std.fmt.fmtSliceHexLower(&message.recipient.bytes) });
+    // Create the statedb, with the created account state.
+    var account_states = [_]AccountState{account_state};
+    var statedb = try StateDB.init(allocator, &account_states);
 
-    //    if (vm.*.execute) |exec| {
-    //         var result = exec(vm, @ptrCast(&host.evmc_host), null, evmc.EVMC_SHANGHAI, @ptrCast(&message), @ptrCast(&code), code.len);
-    //         std.log.info("execution result -> status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
-    //     }
+    // Create the VM with the initialized statedb
+    var vm = VM.init(&statedb);
+
+    // Execute transaction.
+    vm.run_txns(&[_]Transaction{txn});
 }
 
 test "tests" {
