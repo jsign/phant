@@ -7,6 +7,7 @@ const AccountState = types.AccountState;
 const Transaction = types.Transaction;
 const Block = types.Block;
 const vm = @import("../vm/vm.zig");
+const VM = vm.VM;
 const StateDB = vm.StateDB;
 
 const HexString = []const u8;
@@ -66,7 +67,7 @@ pub const FixtureTest = struct {
 
         // 2. Execute blocks.
         for (self.blocks) |block| {
-            var evm = vm.init(&db);
+            var evm = VM.init(&db);
 
             var txns = try allocator.alloc(Transaction, block.transactions.len);
             defer allocator.free(txns);
@@ -74,7 +75,7 @@ pub const FixtureTest = struct {
                 txns[i] = try tx_hex.to_vm_transaction(allocator);
             }
 
-            try evm.run_txns(txns);
+            evm.run_txns(txns);
         }
 
         // 3. Verify that the post state matches what the fixture `postState` claims is true.
@@ -154,7 +155,7 @@ pub const AccountStateHex = struct {
         // TODO(jsign): helper to avoid repetition?
         const balance = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.balance)), std.builtin.Endian.Big);
 
-        var code = try allocator.alloc(u8, self.code[2..].len * 2);
+        var code = try allocator.alloc(u8, self.code[2..].len / 2);
         // TODO(jsign): check this.
         //defer allocator.free(code);
         _ = try std.fmt.hexToBytes(code, self.code[2..]);
@@ -162,7 +163,7 @@ pub const AccountStateHex = struct {
         var addr: Address = undefined;
         _ = try std.fmt.hexToBytes(&addr, addr_hex[2..]);
 
-        var account = AccountState.init(allocator, addr, nonce, balance, code);
+        var account = try AccountState.init(allocator, addr, nonce, balance, code);
         defer account.deinit();
 
         var it = self.storage.map.iterator();

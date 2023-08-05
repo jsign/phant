@@ -9,6 +9,7 @@ const log = std.log.scoped(.account_state);
 
 const AccountState = @This();
 
+allocator: Allocator,
 addr: Address,
 nonce: u256,
 balance: u256,
@@ -16,22 +17,23 @@ code: Bytecode,
 storage: std.AutoHashMap(u256, u256),
 
 // init initializes an account state with the given values.
-// The bytecode slice isn't owned by the account state, so it must outlive the account state.
 // deinit() must be called on the account state to free the storage.
-//
-// TODO(jsign): consider copying code to make it less brittle, or clarify in comment.
-pub fn init(allocator: Allocator, addr: Address, nonce: u256, balance: u256, code: Bytecode) AccountState {
+pub fn init(allocator: Allocator, addr: Address, nonce: u256, balance: u256, code: Bytecode) !AccountState {
+    const copied_code = try allocator.alloc(u8, code.len);
+    @memcpy(copied_code, code);
     return AccountState{
+        .allocator = allocator,
         .addr = addr,
         .nonce = nonce,
         .balance = balance,
-        .code = code,
+        .code = copied_code,
         .storage = std.AutoHashMap(u256, u256).init(allocator),
     };
 }
 
 pub fn deinit(self: *AccountState) void {
     self.storage.deinit();
+    self.allocator.free(self.code);
 }
 
 pub fn storage_get(self: *const AccountState, key: u256) ?u256 {
@@ -46,7 +48,7 @@ pub fn storage_set(self: *AccountState, key: u256, value: u256) !void {
 
 const test_allocator = std.testing.allocator;
 test "storage" {
-    var account = AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
+    var account = try AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
     defer account.deinit();
 
     // Set key=0x42, val=0x43, and check get.
