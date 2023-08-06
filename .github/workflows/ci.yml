@@ -18,11 +18,8 @@ jobs:
       with:
         zig-version: master
 
-    - name: Display zig compiler version
-      run:  zig version
-
     - name: Build
-      run: LD_LIBRARY_PATH=$PWD/evmone zig build
+      run: zig build
 
   lint:
     runs-on: ubuntu-latest
@@ -35,7 +32,7 @@ jobs:
         zig-version: master
 
     - name: Lint
-      run: LD_LIBRARY_PATH=$PWD/evmone zig fmt --check src/*.zig
+      run: zig fmt --check src/*.zig
 
   test:
     runs-on: ubuntu-latest
@@ -48,4 +45,4 @@ jobs:
         zig-version: master
 
     - name: Test
-      run: LD_LIBRARY_PATH=$PWD/evmone zig build test
+      run: zig build test
