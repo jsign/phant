@@ -1,7 +1,7 @@
 const types = @import("../types/types.zig");
 const Address = types.Address;
 const evmc = @cImport({
-    @cInclude("evmc/evmc.h");
+    @cInclude("evmone.h");
 });
 
 // to_evmc_address transforms an Address or ?Address into an evmc_address.

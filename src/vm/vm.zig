@@ -1,8 +1,5 @@
-const evmone = @cImport({
-    @cInclude("evmone.h");
-});
 const evmc = @cImport({
-    @cInclude("evmc/evmc.h");
+    @cInclude("evmone.h");
 });
 const std = @import("std");
 const util = @import("util.zig");
@@ -27,12 +24,12 @@ pub const VM = struct {
     // host is the EVMC host interface.
     host: evmc.struct_evmc_host_interface,
     // evm is the EVMC implementation.
-    evm: [*c]evmone.evmc_vm,
+    evm: [*c]evmc.evmc_vm,
     // exec_context has the current execution context.
     exec_context: ?ExecutionContext,
 
     pub fn init(statedb: *StateDB) VM {
-        var evm = evmone.evmc_create_evmone();
+        var evm = evmc.evmc_create_evmone();
         log.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
         return VM{
             .statedb = statedb,
@@ -246,7 +243,7 @@ pub const VM = struct {
         if (vm.evm.*.execute) |exec| {
             // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
             // TODO(jsign): remove ptrCast
-            var result = exec(vm.evm, @ptrCast(&vm.host), @ptrCast(vm), evmc.EVMC_SHANGHAI, @ptrCast(msg), recipient_code.ptr, recipient_code.len);
+            var result = exec(vm.evm, @ptrCast(&vm.host), @ptrCast(vm), evmc.EVMC_SHANGHAI, msg, recipient_code.ptr, recipient_code.len);
             log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
         } else unreachable;
 
