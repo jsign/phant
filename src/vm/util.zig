@@ -1,3 +1,4 @@
+const std = @import("std");
 const types = @import("../types/types.zig");
 const Address = types.Address;
 const evmc = @cImport({
@@ -27,4 +28,12 @@ pub fn to_evmc_address(address: anytype) evmc.struct_evmc_address {
 
 pub fn from_evmc_address(address: evmc.struct_evmc_address) Address {
     return address.bytes;
+}
+
+pub fn to_evmc_bytes32(num: u256) evmc.evmc_bytes32 {
+    var evmc_num = evmc.struct_evmc_bytes32{
+        .bytes = undefined,
+    };
+    std.mem.writeIntSliceBig(u256, &evmc_num.bytes, num);
+    return evmc_num;
 }
