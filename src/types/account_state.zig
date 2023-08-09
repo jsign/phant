@@ -37,12 +37,10 @@ pub fn deinit(self: *AccountState) void {
 }
 
 pub fn storage_get(self: *const AccountState, key: u256) ?u256 {
-    log.debug("get storage key=0x{x}", .{key});
     return self.storage.get(key);
 }
 
 pub fn storage_set(self: *AccountState, key: u256, value: u256) !void {
-    log.debug("set storage key=0x{x}, value=0x{x}", .{ key, value });
     try self.storage.put(key, value);
 }
 
