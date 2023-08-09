@@ -18,6 +18,51 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const ethash = b.addStaticLibrary(.{
+        .name = "ethash",
+        .optimize = optimize,
+        .target = target,
+    });
+    ethash.addCSourceFiles(&[_][]const u8{"ethash/lib/keccak/keccak.c"}, &[_][]const u8{"-Wall"});
+    ethash.addIncludePath(LazyPath{ .path = "ethash/include" });
+    ethash.linkLibC();
+    ethash.linkLibCpp();
+    b.installArtifact(ethash);
+
+    const evmone = b.addStaticLibrary(.{
+        .name = "evmone",
+        .optimize = optimize,
+        .target = target,
+    });
+    evmone.addCSourceFiles(&[_][]const u8{
+        "evmone/lib/evmone/advanced_analysis.cpp",
+        "evmone/lib/evmone/eof.cpp",
+        "evmone/lib/evmone/advanced_execution.cpp",
+        "evmone/lib/evmone/instructions_calls.cpp",
+        "evmone/lib/evmone/advanced_instructions.cpp",
+        "evmone/lib/evmone/instructions_storage.cpp",
+        "evmone/lib/evmone/baseline.cpp",
+        "evmone/lib/evmone/tracing.cpp",
+        "evmone/lib/evmone/baseline_instruction_table.cpp",
+        "evmone/lib/evmone/vm.cpp",
+    }, &[_][]const u8{
+        "-Wall",                "-std=c++20",                  "-O3",
+        "-fvisibility=hidden",  "-fvisibility-inlines-hidden", "-Wpedantic",
+        "-Werror",              "-Wextra",                     "-Wshadow",
+        "-Wconversion",         "-Wsign-conversion",           "-Wno-unknown-pragmas",
+        "-fno-stack-protector", "-Wimplicit-fallthrough",      "-Wmissing-declarations",
+        "-Wno-attributes",      "-Wextra-semi",                "-fno-exceptions",
+        "-fno-rtti",
+    });
+    evmone.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
+    evmone.addIncludePath(LazyPath{ .path = "evmone/include" });
+    evmone.addIncludePath(LazyPath{ .path = "intx/include" });
+    evmone.addIncludePath(LazyPath{ .path = "ethash/include" });
+    evmone.defineCMacro("PROJECT_VERSION", "\"0.11.0-dev\"");
+    evmone.linkLibC();
+    evmone.linkLibCpp();
+    b.installArtifact(evmone);
+
     const exe = b.addExecutable(.{
         .name = "phant",
         // In this case the main source file is merely a path, however, in more
@@ -26,8 +71,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addIncludePath(LazyPath{ .path = "evmone" });
-    exe.addObjectFile(LazyPath{ .path = "evmone/libevmone.so.0.10" });
+    exe.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
+    exe.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
+    exe.linkLibrary(ethash);
+    exe.linkLibrary(evmone);
     exe.linkLibC();
     exe.addModule("zig-rlp", mod_rlp);
 
@@ -67,8 +114,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     unit_tests.addIncludePath(LazyPath{ .path = "evmone" });
-    unit_tests.addObjectFile(LazyPath{ .path = "evmone/libevmone.so.0.10" });
-
+    unit_tests.linkLibrary(ethash);
+    unit_tests.linkLibrary(evmone);
     unit_tests.linkLibC();
     unit_tests.addModule("zig-rlp", mod_rlp);
 

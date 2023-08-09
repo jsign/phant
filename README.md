@@ -8,16 +8,11 @@ This repo is very experimental, so you have to do some things once.
 
 For now, we use the [Zig v0.11](https://ziglang.org/download/) compiler version.
 
-### Install EVMOne shared library (temporary)
+### Initialize git submodules
 
-You can do: 
-- `sudo cp ./evmone/libevmone.so.0.10 /usr/lib`
-
-If you don't trust (which is a good idea in general) the shared library provided in this repo, you can download it from the [EVMOne releases assets](https://github.com/ethereum/evmone/releases).
-
-This is a temporary requirement, ideally, we'd like to:
-1. Compile EVMOne in the `build.zig` using the Zig C++ compiler.
-2. Compile it as a shared object instead of a shared library, so it could be statically linked.
+After pulling this repo for the first time, do:
+1. `git submodule init`
+2. `git submodule update -v`
 
 ## Run
 
