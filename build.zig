@@ -45,7 +45,15 @@ pub fn build(b: *std.Build) void {
         "evmone/lib/evmone/tracing.cpp",
         "evmone/lib/evmone/baseline_instruction_table.cpp",
         "evmone/lib/evmone/vm.cpp",
-    }, &[_][]const u8{ "-Wall", "-std=c++20" });
+    }, &[_][]const u8{
+        "-Wall",                "-std=c++20",                  "-O3",
+        "-fvisibility=hidden",  "-fvisibility-inlines-hidden", "-Wpedantic",
+        "-Werror",              "-Wextra",                     "-Wshadow",
+        "-Wconversion",         "-Wsign-conversion",           "-Wno-unknown-pragmas",
+        "-fno-stack-protector", "-Wimplicit-fallthrough",      "-Wmissing-declarations",
+        "-Wno-attributes",      "-Wextra-semi",                "-fno-exceptions",
+        "-fno-rtti",
+    });
     evmone.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
     evmone.addIncludePath(LazyPath{ .path = "evmone/include" });
     evmone.addIncludePath(LazyPath{ .path = "intx/include" });
