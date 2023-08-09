@@ -5,6 +5,7 @@ const std = @import("std");
 const util = @import("util.zig");
 const types = @import("../types/types.zig");
 const Transaction = types.Transaction;
+const Block = types.Block;
 const AccountState = types.AccountState;
 const Bytecode = types.Bytecode;
 const Address = types.Address;
@@ -65,19 +66,21 @@ pub const VM = struct {
         // TODO(jsign): check freeing evmone instance.
     }
 
-    pub fn run_txns(self: *VM, txns: []const Transaction) void {
+    pub fn run_block(self: *VM, block: Block, txns: []const Transaction) void {
+        log.debug("run block number={d}", .{block.header.block_number});
         // TODO: stashing area.
         for (txns) |txn| {
+            // TODO(jsign): check why we need @intCast(), as in, why EVMC expects signed integers?
             self.tx_context = evmc.struct_evmc_tx_context{
                 .tx_gas_price = util.to_evmc_bytes32(txn.gas_price),
                 .tx_origin = util.to_evmc_address(txn.get_from()),
                 .block_coinbase = std.mem.zeroes(evmc.struct_evmc_address),
-                .block_number = 0, // TODO
-                .block_timestamp = 0, // TODO
-                .block_gas_limit = 0, // TODO
-                .block_prev_randao = std.mem.zeroes(evmc.evmc_uint256be), // TODO
+                .block_number = @intCast(block.header.block_number),
+                .block_timestamp = @intCast(block.header.timestamp),
+                .block_gas_limit = @intCast(block.header.gas_limit),
+                .block_prev_randao = .{ .bytes = block.header.prev_randao },
                 .chain_id = util.to_evmc_bytes32(txn.chain_id),
-                .block_base_fee = std.mem.zeroes(evmc.evmc_uint256be), // TODO
+                .block_base_fee = .{ .bytes = [_]u8{0} ** (32 - 4) ++ block.header.base_fee_per_gas }, // TODO(jsign): check this.
                 .blob_hashes = null, // TODO
                 .blob_hashes_count = 0, // TODO
             };
@@ -85,9 +88,15 @@ pub const VM = struct {
         }
     }
 
-    pub fn run_txn(self: *VM, txn: Transaction) void {
-        log.debug("running tx", .{}); // TODO(jsign): add txn hash when available.
+    // TODO(jsign): remove this method.
+    pub fn run_txns(self: *VM, txns: []const Transaction) void {
+        // TODO: stashing area.
+        for (txns) |txn| {
+            self.run_txn(txn);
+        }
+    }
 
+    fn run_txn(self: *VM, txn: Transaction) void {
         var recipient_code: Bytecode = &[_]u8{};
         if (txn.to) |to| {
             if (self.statedb.get(to)) |account| {
@@ -114,6 +123,10 @@ pub const VM = struct {
             },
             .code_address = util.to_evmc_address(txn.to), // TODO: fix this when .kind is generalized.
         };
+        log.debug(
+            "executing transaction sender={} receipient={}",
+            .{ std.fmt.fmtSliceHexLower(&message.sender.bytes), std.fmt.fmtSliceHexLower(&message.recipient.bytes) },
+        ); // TODO(jsign): add txn hash when available.
 
         // Initialize the execution context.
         self.exec_context = ExecutionContext{
@@ -263,9 +276,8 @@ pub const VM = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
     ) callconv(.C) evmc.enum_evmc_access_status {
+        log.debug("access_account(addr={})", .{std.fmt.fmtSliceHexLower(&addr.*.bytes)});
         _ = ctx;
-        const addr_hex = std.fmt.bytesToHex(addr.*.bytes, std.fmt.Case.lower);
-        log.debug("access_account()    accessAccount=0x{s}", .{addr_hex});
         return evmc.EVMC_ACCESS_COLD;
     }
 
@@ -285,32 +297,54 @@ pub const VM = struct {
         msg: [*c]const evmc.struct_evmc_message,
     ) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        log.debug("call(depth={d})", .{msg.*.depth}); // TODO(jsign): explore creating custom formatter?
+        log.debug(
+            "call depth={d} kind={d}, sender={} receipient={}",
+            .{ msg.*.depth, msg.*.kind, std.fmt.fmtSliceHexLower(&msg.*.sender.bytes), std.fmt.fmtSliceHexLower(&msg.*.recipient.bytes) },
+        ); // TODO(jsign): explore creating custom formatter?
 
-        // Persist the current context. We'll restore it after the call return.
-        const prev_context = vm.*.exec_context.?;
+        // Check if the target address is a contract, and do the appropiate call.
+        if (vm.statedb.get(util.from_evmc_address(msg.*.code_address))) |recipient_account| {
+            if (recipient_account.code.len != 0) {
+                log.debug("contract call", .{});
+                // Persist the current context. We'll restore it after the call returns.
+                const prev_context = vm.*.exec_context.?;
 
-        // Create the new context to be used to do the call.
-        vm.exec_context = ExecutionContext{ .address = util.from_evmc_address(msg.*.recipient) };
+                // Create the new context to be used to do the call.
+                vm.exec_context = ExecutionContext{ .address = util.from_evmc_address(msg.*.recipient) };
 
-        const recipient_account = vm.statedb.get(util.from_evmc_address(msg.*.code_address));
-        const recipient_code: Bytecode = recipient_account.?.code;
+                // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
+                var result = vm.evm.*.execute.?(
+                    vm.evm,
+                    @ptrCast(&vm.host),
+                    @ptrCast(vm),
+                    evmc.EVMC_SHANGHAI,
+                    msg,
+                    recipient_account.code.ptr,
+                    recipient_account.code.len,
+                );
+                log.debug(
+                    "call exec result: status_code={}, gas_left={}",
+                    .{ result.status_code, result.gas_left },
+                );
 
-        // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
-        var result = vm.evm.*.execute.?(
-            vm.evm,
-            @ptrCast(&vm.host),
-            @ptrCast(vm),
-            evmc.EVMC_SHANGHAI,
-            msg,
-            recipient_code.ptr,
-            recipient_code.len,
-        );
-        log.debug("call exec result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
+                // Restore previous context after call() returned.
+                vm.exec_context = prev_context;
 
-        // Restore previous context after call() returned.
-        vm.exec_context = prev_context;
+                return result;
+            }
+        }
 
-        @panic("TODO");
+        log.debug("non-contract call", .{});
+        // TODO(jsign): verify.
+        return evmc.evmc_result{
+            .status_code = evmc.EVMC_SUCCESS,
+            .gas_left = msg.*.gas,
+            .gas_refund = 0,
+            .output_data = null,
+            .output_size = 0,
+            .release = null,
+            .create_address = std.mem.zeroes(evmc.evmc_address),
+            .padding = [_]u8{0} ** 4,
+        };
     }
 };

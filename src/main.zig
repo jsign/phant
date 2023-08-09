@@ -47,8 +47,8 @@ pub fn main() !void {
 test "tests" {
     std.testing.log_level = .debug;
 
-    // TODO: at some point unify entrypoint per package.
-    // _ = @import("exec-spec-tests/execspectests.zig"); // TODO(jsign): In progress...
+    // // TODO: at some point unify entrypoint per package.
+    _ = @import("exec-spec-tests/execspectests.zig");
     _ = @import("types/types.zig");
     _ = @import("vm/vm.zig");
 }
