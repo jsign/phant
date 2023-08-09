@@ -231,29 +231,23 @@ pub const VM = struct {
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        log.debug("call()", .{}); // TODO(jsign): explore creating custom formatter?
+        log.debug("call(depth={d})", .{msg.*.depth}); // TODO(jsign): explore creating custom formatter?
 
         // Persist the current context. We'll restore it after the call return.
-        const current_context = vm.*.exec_context.?;
-        _ = current_context;
+        const prev_context = vm.*.exec_context.?;
 
         // Create the new context to be used to do the call.
         vm.exec_context = ExecutionContext{ .address = util.from_evmc_address(msg.*.recipient) };
 
-        var recipient_code: Bytecode = &[_]u8{};
         const recipient_account = vm.statedb.get(util.from_evmc_address(msg.*.code_address));
-        if (recipient_account) |account| {
-            recipient_code = account.code;
-        } else {
-            unreachable;
-        }
+        const recipient_code: Bytecode = recipient_account.?.code;
 
-        if (vm.evm.*.execute) |exec| {
-            // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
-            // TODO(jsign): remove ptrCast
-            var result = exec(vm.evm, @ptrCast(&vm.host), @ptrCast(vm), evmc.EVMC_SHANGHAI, msg, recipient_code.ptr, recipient_code.len);
-            log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
-        } else unreachable;
+        // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
+        var result = vm.evm.*.execute.?(vm.evm, @ptrCast(&vm.host), @ptrCast(vm), evmc.EVMC_SHANGHAI, msg, recipient_code.ptr, recipient_code.len);
+        log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
+
+        // Restore previous context after call() returned.
+        vm.exec_context = prev_context;
 
         @panic("TODO");
     }
