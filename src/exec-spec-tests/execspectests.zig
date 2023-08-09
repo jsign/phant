@@ -10,6 +10,7 @@ const BlockHeader = types.BlockHeader;
 const vm = @import("../vm/vm.zig");
 const VM = vm.VM;
 const StateDB = vm.StateDB;
+const log = std.log.scoped(.execspectests);
 
 const HexString = []const u8;
 
@@ -81,14 +82,28 @@ pub const FixtureTest = struct {
                 txns[i] = try tx_hex.to_vm_transaction(allocator);
             }
 
-            evm.run_block(block, txns);
+            try evm.run_block(block, txns);
         }
 
         // 3. Verify that the post state matches what the fixture `postState` claims is true.
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
-            var account_state = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
-            _ = account_state;
+            var exp_account_state: AccountState = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
+            std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
+            const got_account_state = try db.get(exp_account_state.addr);
+            if (!std.mem.eql(u8, &got_account_state.addr, &exp_account_state.addr)) {
+                return error.post_state_addr_mismatch;
+            }
+            if (got_account_state.nonce != exp_account_state.nonce) {
+                return error.post_state_nonce_mismatch;
+            }
+            if (got_account_state.balance != exp_account_state.balance) {
+                log.err("expected balance {d} but got {d}", .{ exp_account_state.balance, got_account_state.balance });
+                return error.post_state_balance_mismatch;
+            }
+            if (got_account_state.storage.count() != exp_account_state.storage.count()) {
+                return error.post_state_storage_size_mismatch;
+            }
         }
 
         return false;
@@ -156,10 +171,8 @@ pub const AccountStateHex = struct {
     // TODO(jsign): add init() and add assertions about lengths.
 
     pub fn to_vm_accountstate(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
-        const nonce = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.nonce)), std.builtin.Endian.Big);
-
-        // TODO(jsign): helper to avoid repetition?
-        const balance = std.mem.readInt(u256, @as(*const [32]u8, @ptrCast(self.balance)), std.builtin.Endian.Big);
+        const nonce = try std.fmt.parseInt(u256, self.nonce[2..], 16);
+        const balance = try std.fmt.parseInt(u256, self.balance[2..], 16);
 
         var code = try allocator.alloc(u8, self.code[2..].len / 2);
         // TODO(jsign): check this.
@@ -170,7 +183,6 @@ pub const AccountStateHex = struct {
         _ = try std.fmt.hexToBytes(&addr, addr_hex[2..]);
 
         var account = try AccountState.init(allocator, addr, nonce, balance, code);
-        defer account.deinit();
 
         var it = self.storage.map.iterator();
         while (it.next()) |entry| {
@@ -188,14 +200,12 @@ const AccountStorageHex = std.json.ArrayHashMap(HexString);
 
 var test_allocator = std.testing.allocator;
 test "execution-spec-tests" {
-    const log = std.log.scoped(.test_execution_spec);
-
     var ft = try Fixture.new_from_bytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
     while (it.next()) |entry| {
         log.debug("##### Executing fixture {s} #####", .{entry.key_ptr.*});
-        _ = try entry.value_ptr.*.run(test_allocator);
+        try std.testing.expect(try entry.value_ptr.*.run(test_allocator));
     }
 }

@@ -4,6 +4,7 @@ const util = @import("../util/util.zig");
 const types = @import("types.zig");
 const Address = types.Address;
 const Bytecode = types.Bytecode;
+const assert = std.debug.assert;
 
 const log = std.log.scoped(.account_state);
 
@@ -19,14 +20,12 @@ storage: std.AutoHashMap(u256, u256),
 // init initializes an account state with the given values.
 // deinit() must be called on the account state to free the storage.
 pub fn init(allocator: Allocator, addr: Address, nonce: u256, balance: u256, code: Bytecode) !AccountState {
-    const copied_code = try allocator.alloc(u8, code.len);
-    @memcpy(copied_code, code);
     return AccountState{
         .allocator = allocator,
         .addr = addr,
         .nonce = nonce,
         .balance = balance,
-        .code = copied_code,
+        .code = try allocator.dupe(u8, code),
         .storage = std.AutoHashMap(u256, u256).init(allocator),
     };
 }
