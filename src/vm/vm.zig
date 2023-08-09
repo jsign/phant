@@ -25,8 +25,11 @@ pub const VM = struct {
     host: evmc.struct_evmc_host_interface,
     // evm is the EVMC implementation.
     evm: [*c]evmc.evmc_vm,
+
     // exec_context has the current execution context.
     exec_context: ?ExecutionContext,
+    // tx_context for the current execution.
+    tx_context: ?evmc.struct_evmc_tx_context,
 
     pub fn init(statedb: *StateDB) VM {
         var evm = evmc.evmc_create_evmone();
@@ -51,6 +54,7 @@ pub const VM = struct {
             },
             .evm = evm,
             .exec_context = null,
+            .tx_context = null,
         };
     }
 
@@ -61,6 +65,19 @@ pub const VM = struct {
     pub fn run_txns(self: *VM, txns: []const Transaction) void {
         // TODO: stashing area.
         for (txns) |txn| {
+            self.tx_context = evmc.struct_evmc_tx_context{
+                .tx_gas_price = util.to_evmc_bytes32(txn.gas_price),
+                .tx_origin = util.to_evmc_address(txn.get_from()),
+                .block_coinbase = std.mem.zeroes(evmc.struct_evmc_address),
+                .block_number = 0, // TODO
+                .block_timestamp = 0, // TODO
+                .block_gas_limit = 0, // TODO
+                .block_prev_randao = std.mem.zeroes(evmc.evmc_uint256be), // TODO
+                .chain_id = util.to_evmc_bytes32(txn.chain_id),
+                .block_base_fee = std.mem.zeroes(evmc.evmc_uint256be), // TODO
+                .blob_hashes = null, // TODO
+                .blob_hashes_count = 0, // TODO
+            };
             self.run_txn(txn);
         }
     }
@@ -116,20 +133,9 @@ pub const VM = struct {
     // ### EVMC Host Interface ###
 
     fn get_tx_context(ctx: ?*evmc.struct_evmc_host_context) callconv(.C) evmc.struct_evmc_tx_context {
-        // tx_gas_price: evmc_uint256be,
-        //     tx_origin: evmc_address,
-        //     block_coinbase: evmc_address,
-        //     block_number: i64,
-        //     block_timestamp: i64,
-        //     block_gas_limit: i64,
-        //     block_prev_randao: evmc_uint256be,
-        //     chain_id: evmc_uint256be,
-        //     block_base_fee: evmc_uint256be,
-        //     blob_hashes: [*c]const evmc_bytes32,
-        //     blob_hashes_count: usize,
-
-        _ = ctx;
-        @panic("TODO");
+        log.debug("get_tx_context()", .{});
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        return vm.tx_context.?;
     }
 
     fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, xx: i64) callconv(.C) evmc.evmc_bytes32 {
@@ -238,7 +244,9 @@ pub const VM = struct {
         const recipient_account = vm.statedb.get(util.from_evmc_address(msg.*.code_address));
         if (recipient_account) |account| {
             recipient_code = account.code;
-        } else unreachable;
+        } else {
+            unreachable;
+        }
 
         if (vm.evm.*.execute) |exec| {
             // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
