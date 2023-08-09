@@ -33,7 +33,10 @@ pub const VM = struct {
 
     pub fn init(statedb: *StateDB) VM {
         var evm = evmc.evmc_create_evmone();
-        log.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
+        log.info(
+            "evmone info: name={s}, version={s}, abi_version={d}",
+            .{ evm.*.name, evm.*.version, evm.*.abi_version },
+        );
         return VM{
             .statedb = statedb,
             .host = evmc.struct_evmc_host_interface{
@@ -138,25 +141,40 @@ pub const VM = struct {
         return vm.tx_context.?;
     }
 
-    fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, xx: i64) callconv(.C) evmc.evmc_bytes32 {
+    fn get_block_hash(
+        ctx: ?*evmc.struct_evmc_host_context,
+        xx: i64,
+    ) callconv(.C) evmc.evmc_bytes32 {
         _ = xx;
         _ = ctx;
         @panic("TODO");
     }
 
-    fn account_exists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) bool {
+    fn account_exists(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+    ) callconv(.C) bool {
         _ = addr;
         _ = ctx;
         @panic("TODO");
     }
 
-    fn get_storage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, dest: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.evmc_bytes32 {
+    fn get_storage(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+        dest: [*c]const evmc.evmc_bytes32,
+    ) callconv(.C) evmc.evmc_bytes32 {
         _ = ctx;
         _ = dest;
         _ = addr;
         @panic("TODO");
     }
-    fn set_storage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, value: [*c]const evmc.evmc_bytes32, xxx: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.enum_evmc_storage_status {
+    fn set_storage(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+        value: [*c]const evmc.evmc_bytes32,
+        xxx: [*c]const evmc.evmc_bytes32,
+    ) callconv(.C) evmc.enum_evmc_storage_status {
         _ = xxx;
         _ = value;
         _ = addr;
@@ -164,7 +182,10 @@ pub const VM = struct {
         @panic("TODO");
     }
 
-    fn get_balance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_uint256be {
+    fn get_balance(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+    ) callconv(.C) evmc.evmc_uint256be {
         _ = ctx;
         const addr_hex = std.fmt.bytesToHex(addr.*.bytes, std.fmt.Case.lower);
         log.debug("evmc call -> getBalance(0x{s})", .{addr_hex});
@@ -177,19 +198,31 @@ pub const VM = struct {
         };
     }
 
-    fn get_code_size(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) usize {
+    fn get_code_size(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+    ) callconv(.C) usize {
         _ = addr;
         _ = ctx;
         @panic("TODO");
     }
 
-    fn get_code_hash(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_bytes32 {
+    fn get_code_hash(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+    ) callconv(.C) evmc.evmc_bytes32 {
         _ = addr;
         _ = ctx;
         @panic("TODO");
     }
 
-    fn copy_code(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, xxx: usize, xxy: [*c]u8, xxz: usize) callconv(.C) usize {
+    fn copy_code(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+        xxx: usize,
+        xxy: [*c]u8,
+        xxz: usize,
+    ) callconv(.C) usize {
         _ = xxz;
         _ = xxy;
         _ = xxx;
@@ -198,14 +231,25 @@ pub const VM = struct {
         @panic("TODO");
     }
 
-    fn self_destruct(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, addr2: [*c]const evmc.evmc_address) callconv(.C) bool {
+    fn self_destruct(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+        addr2: [*c]const evmc.evmc_address,
+    ) callconv(.C) bool {
         _ = addr2;
         _ = addr;
         _ = ctx;
         @panic("TODO");
     }
 
-    fn emit_log(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, xxx: [*c]const u8, xxy: usize, xxz: [*c]const evmc.evmc_bytes32, xxxzz: usize) callconv(.C) void {
+    fn emit_log(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+        xxx: [*c]const u8,
+        xxy: usize,
+        xxz: [*c]const evmc.evmc_bytes32,
+        xxxzz: usize,
+    ) callconv(.C) void {
         _ = xxxzz;
         _ = xxz;
         _ = xxy;
@@ -215,21 +259,31 @@ pub const VM = struct {
         @panic("TODO");
     }
 
-    fn access_account(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.enum_evmc_access_status {
+    fn access_account(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+    ) callconv(.C) evmc.enum_evmc_access_status {
         _ = ctx;
         const addr_hex = std.fmt.bytesToHex(addr.*.bytes, std.fmt.Case.lower);
         log.debug("access_account()    accessAccount=0x{s}", .{addr_hex});
         return evmc.EVMC_ACCESS_COLD;
     }
 
-    fn access_storage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, value: [*c]const evmc.evmc_bytes32) callconv(.C) evmc.enum_evmc_access_status {
+    fn access_storage(
+        ctx: ?*evmc.struct_evmc_host_context,
+        addr: [*c]const evmc.evmc_address,
+        value: [*c]const evmc.evmc_bytes32,
+    ) callconv(.C) evmc.enum_evmc_access_status {
         _ = value;
         _ = addr;
         _ = ctx;
         @panic("TODO");
     }
 
-    fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
+    fn call(
+        ctx: ?*evmc.struct_evmc_host_context,
+        msg: [*c]const evmc.struct_evmc_message,
+    ) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         log.debug("call(depth={d})", .{msg.*.depth}); // TODO(jsign): explore creating custom formatter?
 
@@ -243,8 +297,16 @@ pub const VM = struct {
         const recipient_code: Bytecode = recipient_account.?.code;
 
         // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
-        var result = vm.evm.*.execute.?(vm.evm, @ptrCast(&vm.host), @ptrCast(vm), evmc.EVMC_SHANGHAI, msg, recipient_code.ptr, recipient_code.len);
-        log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
+        var result = vm.evm.*.execute.?(
+            vm.evm,
+            @ptrCast(&vm.host),
+            @ptrCast(vm),
+            evmc.EVMC_SHANGHAI,
+            msg,
+            recipient_code.ptr,
+            recipient_code.len,
+        );
+        log.debug("call exec result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
 
         // Restore previous context after call() returned.
         vm.exec_context = prev_context;
