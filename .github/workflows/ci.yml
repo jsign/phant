@@ -19,7 +19,7 @@ jobs:
         zig-version: master
 
     - name: Build
-      run: zig build
+      run: git submodule update --init --recursive && zig build
 
   lint:
     runs-on: self-hosted
@@ -45,4 +45,4 @@ jobs:
         zig-version: master
 
     - name: Test
-      run: zig build test
+      run: git submodule update --init --recursive && zig build test
