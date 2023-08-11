@@ -35,7 +35,7 @@ pub const Header = struct {
     extra_data: []const u8,
     mix_hash: u256,
     nonce: [8]u8,
-    base_fee_per_gas: [4]u8,
+    base_fee_per_gas: u256,
 };
 
 var test_allocator = std.testing.allocator;
@@ -79,8 +79,7 @@ test "decode vkt block sample" {
     try std.testing.expectEqual(@as(i64, 0x14), block.header.timestamp);
     try std.testing.expect(block.header.extra_data.len == 0);
     try std.testing.expectEqual(@as(u256, 0), block.header.mix_hash);
-    try std.testing.expectEqualStrings("0000000000000000", &bytesToHex(block.header.nonce));
-    try std.testing.expectEqualStrings("2de81128", &bytesToHex(block.header.base_fee_per_gas));
+    try std.testing.expectEqual(@as(u256, 0x2de81128), block.header.base_fee_per_gas);
 }
 
 fn bytesToHex(bytes: anytype) [bytes.len * 2]u8 {

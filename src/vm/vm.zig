@@ -34,7 +34,6 @@ const BlockContext = struct {
     gas_limit: i64,
     prev_randao: u256,
     base_fee: u256,
-    blob_hashes: ?[]const [32]u8,
 };
 
 pub const VM = struct {
@@ -114,8 +113,7 @@ pub const VM = struct {
             .timestamp = block.header.timestamp,
             .gas_limit = block.header.gas_limit,
             .prev_randao = std.mem.readIntSlice(u256, &block.header.prev_randao, std.builtin.Endian.Big),
-            .base_fee = @as(u256, std.mem.readIntSlice(u32, &block.header.base_fee_per_gas, std.builtin.Endian.Big)),
-            .blob_hashes = null, // TODO
+            .base_fee = block.header.base_fee_per_gas,
         };
     }
 
@@ -125,14 +123,6 @@ pub const VM = struct {
             .gas_price = txn.gas_price,
             .from = txn.get_from(),
         };
-    }
-
-    // TODO(jsign): remove this method.
-    pub fn run_txns(self: *VM, txns: []const Transaction) void {
-        // TODO: stashing area.
-        for (txns) |txn| {
-            self.run_txn(txn);
-        }
     }
 
     fn run_txn(self: *VM, txn: Transaction) !void {
@@ -224,8 +214,6 @@ pub const VM = struct {
             .block_prev_randao = util.to_evmc_bytes32(vm.context.?.block.prev_randao),
             .chain_id = util.to_evmc_bytes32(vm.context.?.txn.chain_id),
             .block_base_fee = util.to_evmc_bytes32(vm.context.?.block.base_fee),
-            .blob_hashes = null, // TODO
-            .blob_hashes_count = 0, // TODO
         };
     }
 

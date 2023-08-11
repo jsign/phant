@@ -206,9 +206,16 @@ test "execution-spec-tests" {
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
+    var count: usize = 0;
+
     while (it.next()) |entry| {
         log.debug("##### Executing fixture {s} #####", .{entry.key_ptr.*});
         try std.testing.expect(try entry.value_ptr.*.run(test_allocator));
-        return; // TODO(jsign): only run the first test for now. Then we can enable all and continue with the integration.
+        count += 1;
+
+        // TODO: Only run the first test for now. Then we can enable all and continue with the integration.
+        if (count == 1) {
+            break;
+        }
     }
 }
