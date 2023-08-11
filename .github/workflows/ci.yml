@@ -46,3 +46,16 @@ jobs:
 
     - name: Test
       run: git submodule update --init --recursive && zig build test
+
+  build-aarch64:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+    
+      - name: Set up Zig
+        uses: korandoru/setup-zig@v1
+        with:
+          zig-version: 0.11.0
+    
+      - name: Test
+        run: git submodule update --init --recursive && zig build -Dtarget="aarch64-linux"
