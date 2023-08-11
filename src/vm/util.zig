@@ -31,9 +31,11 @@ pub fn from_evmc_address(address: evmc.struct_evmc_address) Address {
 }
 
 pub fn to_evmc_bytes32(num: u256) evmc.evmc_bytes32 {
-    var evmc_num = evmc.struct_evmc_bytes32{
-        .bytes = undefined,
+    return evmc.struct_evmc_bytes32{
+        .bytes = blk: {
+            var ret: [32]u8 = undefined;
+            std.mem.writeIntSliceBig(u256, &ret, num);
+            break :blk ret;
+        },
     };
-    std.mem.writeIntSliceBig(u256, &evmc_num.bytes, num);
-    return evmc_num;
 }

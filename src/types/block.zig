@@ -28,10 +28,10 @@ pub const Header = struct {
     receipts_root: types.Bytes32,
     logs_bloom: [BYTES_PER_LOGS_BLOOM]u8,
     prev_randao: types.Bytes32,
-    block_number: u64,
-    gas_limit: u64,
+    block_number: i64,
+    gas_limit: i64,
     gas_used: u64,
-    timestamp: u64,
+    timestamp: i64,
     extra_data: []const u8,
     mix_hash: u256,
     nonce: [8]u8,
@@ -73,10 +73,10 @@ test "decode vkt block sample" {
         "0200000000000000000000000000000000000000000000000000000000000000",
         &bytesToHex(block.header.prev_randao),
     );
-    try std.testing.expectEqual(@as(u64, 2), block.header.block_number);
-    try std.testing.expectEqual(@as(u64, 0x47e7c4), block.header.gas_limit);
+    try std.testing.expectEqual(@as(i64, 2), block.header.block_number);
+    try std.testing.expectEqual(@as(i64, 0x47e7c4), block.header.gas_limit);
     try std.testing.expectEqual(@as(u64, 0x05802b), block.header.gas_used);
-    try std.testing.expectEqual(@as(u64, 0x14), block.header.timestamp);
+    try std.testing.expectEqual(@as(i64, 0x14), block.header.timestamp);
     try std.testing.expect(block.header.extra_data.len == 0);
     try std.testing.expectEqual(@as(u256, 0), block.header.mix_hash);
     try std.testing.expectEqualStrings("0000000000000000", &bytesToHex(block.header.nonce));
