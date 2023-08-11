@@ -1,7 +1,8 @@
+const std = @import("std");
 const types = @import("../types/types.zig");
 const Address = types.Address;
 const evmc = @cImport({
-    @cInclude("evmc/evmc.h");
+    @cInclude("evmone.h");
 });
 
 // to_evmc_address transforms an Address or ?Address into an evmc_address.
@@ -27,4 +28,14 @@ pub fn to_evmc_address(address: anytype) evmc.struct_evmc_address {
 
 pub fn from_evmc_address(address: evmc.struct_evmc_address) Address {
     return address.bytes;
+}
+
+pub fn to_evmc_bytes32(num: u256) evmc.evmc_bytes32 {
+    return evmc.struct_evmc_bytes32{
+        .bytes = blk: {
+            var ret: [32]u8 = undefined;
+            std.mem.writeIntSliceBig(u256, &ret, num);
+            break :blk ret;
+        },
+    };
 }
