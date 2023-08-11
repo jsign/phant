@@ -95,6 +95,7 @@ pub const FixtureTest = struct {
                 return error.post_state_addr_mismatch;
             }
             if (got_account_state.nonce != exp_account_state.nonce) {
+                log.err("expected nonce {d} but got {d}", .{ exp_account_state.nonce, got_account_state.nonce });
                 return error.post_state_nonce_mismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
@@ -105,6 +106,7 @@ pub const FixtureTest = struct {
                 return error.post_state_storage_size_mismatch;
             }
         }
+        // TODO(jsign): verify gas used.
 
         return false;
     }

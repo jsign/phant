@@ -103,29 +103,28 @@ pub const VM = struct {
     }
 
     fn run_txn(self: *VM, txn: Transaction) !void {
+        const from_addr = txn.get_from();
         var remaining_gas: i64 = @intCast(txn.gas_limit);
 
         if (txn.to) |to| {
             assert(!std.mem.eql(u8, &to, &std.mem.zeroes(Address)));
-            var account = try self.statedb.get(to);
 
             if (txn.nonce +% 1 < txn.nonce) {
                 return error.MaxNonce;
             }
-            if (txn.nonce != account.nonce) {
-                log.err("txn nonce {d} != account nonce {d}", .{ txn.nonce, account.nonce });
-                return error.InvalidNonce;
-            }
 
-            if (txn.value > 0) { // TODO(jsign): incomplete
-                account.balance += txn.value;
-            }
+            try self.statedb.*.set_nonce(from_addr, txn.nonce + 1);
 
             // TODO(jsign): this is incomplete.
             try charge_gas(&remaining_gas, txn_base_gas);
 
+            var account_to = try self.statedb.get(to);
+            if (txn.value > 0) { // TODO(jsign): incomplete
+                account_to.balance += txn.value;
+            }
+
             // Contract call
-            const recipient_code = account.code;
+            const recipient_code = account_to.code;
             if (recipient_code.len != 0) {
                 const message = evmc.struct_evmc_message{
                     .kind = evmc.EVMC_CALL, // TODO(jsign): generalize.
@@ -133,7 +132,7 @@ pub const VM = struct {
                     .depth = 0,
                     .gas = @intCast(remaining_gas), // TODO(jsign): why evmc expects a i64 for gas instead of u64?
                     .recipient = util.to_evmc_address(txn.to),
-                    .sender = util.to_evmc_address(txn.get_from()),
+                    .sender = util.to_evmc_address(from_addr),
                     .input_data = txn.data.ptr,
                     .input_size = txn.data.len,
                     .value = blk: {
@@ -156,9 +155,8 @@ pub const VM = struct {
 
                 // Initialize the execution context.
                 self.exec_context = ExecutionContext{
-                    .address = txn.get_from(),
+                    .address = from_addr,
                 };
-                log.warn("COOODE {}", .{std.fmt.fmtSliceHexLower(recipient_code)});
 
                 // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
                 var result = self.evm.*.execute.?(
@@ -178,11 +176,16 @@ pub const VM = struct {
             @panic("TODO contract creation");
         }
 
-        const gas_price = 0xa - 0x7; // TODO(jsign): fix, pull from tx_context.
         const gas_used = @as(i64, @intCast(txn.gas_limit)) - remaining_gas; // TODO(jsign): decide on casts.
-        log.info("gas used {x}", .{gas_used});
-        const fee = gas_used * gas_price;
-        try self.statedb.add_balance(self.tx_context.?.block_coinbase.bytes, @as(u256, @intCast(fee)));
+
+        // Coinbase rewards.
+        const gas_tip = 0xa - 0x7; // TODO(jsign): fix, pull from tx_context.
+        const coinbase_fee = gas_used * gas_tip;
+        try self.statedb.add_balance(self.tx_context.?.block_coinbase.bytes, @as(u256, @intCast(coinbase_fee)));
+
+        // Sender fees.
+        const sender_fee = gas_used * 0xa;
+        try self.statedb.sub_balance(from_addr, @as(u256, @intCast(sender_fee)));
     }
 
     inline fn charge_gas(remaining_gas: *i64, charge: u64) !void {

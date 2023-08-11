@@ -41,4 +41,18 @@ pub fn add_balance(self: *StateDB, addr: Address, amount: u256) !void {
     account.balance += amount;
 }
 
+pub fn sub_balance(self: *StateDB, addr: Address, amount: u256) !void {
+    var account = try self.get(addr);
+    account.balance -= amount;
+}
+
+pub fn set_nonce(self: *StateDB, addr: Address, nonce: u256) !void {
+    var account = try self.get(addr);
+
+    if (nonce != account.nonce + 1) {
+        return error.InvalidNonce;
+    }
+    account.nonce = nonce;
+}
+
 // TODO: get tests.
