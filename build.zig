@@ -132,7 +132,16 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    unit_tests.addIncludePath(LazyPath{ .path = "evmone" });
+    unit_tests.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
+    unit_tests.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
+    if (target.getCpuArch() == .x86_64) {
+        // On x86_64, some functions are missing from the static library,
+        // so we define dummy functions to make sure that it compiles.
+        unit_tests.addCSourceFile(.{
+            .file = .{ .path = "src/glue.c" },
+            .flags = &cflags,
+        });
+    }
     unit_tests.linkLibrary(ethash);
     unit_tests.linkLibrary(evmone);
     unit_tests.linkLibC();
