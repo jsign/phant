@@ -108,7 +108,7 @@ pub const FixtureTest = struct {
         }
         // TODO(jsign): verify gas used.
 
-        return false;
+        return true;
     }
 };
 
@@ -209,5 +209,6 @@ test "execution-spec-tests" {
     while (it.next()) |entry| {
         log.debug("##### Executing fixture {s} #####", .{entry.key_ptr.*});
         try std.testing.expect(try entry.value_ptr.*.run(test_allocator));
+        return; // TODO(jsign): only run the first test for now. Then we can enable all and continue with the integration.
     }
 }

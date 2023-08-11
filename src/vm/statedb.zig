@@ -36,6 +36,11 @@ pub fn get(self: *StateDB, addr: Address) !*AccountState {
     return res.value_ptr;
 }
 
+pub fn set_storage(self: *StateDB, addr: Address, key: u256, value: u256) !void {
+    var account = try self.get(addr);
+    try account.storage.put(key, value);
+}
+
 pub fn add_balance(self: *StateDB, addr: Address, amount: u256) !void {
     var account = try self.get(addr);
     account.balance += amount;

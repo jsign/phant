@@ -234,13 +234,16 @@ pub const VM = struct {
     fn set_storage(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
+        key: [*c]const evmc.evmc_bytes32,
         value: [*c]const evmc.evmc_bytes32,
-        xxx: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.enum_evmc_storage_status {
-        _ = xxx;
-        _ = value;
-        _ = addr;
-        _ = ctx;
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+
+        const skey = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
+        const svalue = std.mem.readIntSlice(u256, &value.*.bytes, std.builtin.Endian.Big);
+
+        vm.statedb.set_storage(addr.*.bytes, skey, svalue) catch unreachable; // TODO(jsign): manage catch.
+
         return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix
     }
 
