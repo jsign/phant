@@ -60,4 +60,9 @@ pub fn set_nonce(self: *StateDB, addr: Address, nonce: u256) !void {
     account.nonce = nonce;
 }
 
+pub fn get_code(self: *StateDB, addr: Address) ![]const u8 {
+    var account = try self.get(addr);
+    return account.code;
+}
+
 // TODO: get tests.

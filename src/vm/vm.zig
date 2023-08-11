@@ -73,21 +73,7 @@ pub const VM = struct {
         log.debug("run block number={d}", .{block.header.block_number});
         // TODO: stashing area.
         for (txns) |txn| {
-            // TODO(jsign): check why we need @intCast(), as in, why EVMC expects signed integers?
-            self.tx_context = evmc.struct_evmc_tx_context{
-                .tx_gas_price = util.to_evmc_bytes32(txn.gas_price),
-                .tx_origin = util.to_evmc_address(txn.get_from()),
-                .block_coinbase = .{ .bytes = block.header.fee_recipient },
-                .block_number = @intCast(block.header.block_number),
-                .block_timestamp = @intCast(block.header.timestamp),
-                .block_gas_limit = @intCast(block.header.gas_limit),
-                .block_prev_randao = .{ .bytes = block.header.prev_randao },
-                .chain_id = util.to_evmc_bytes32(txn.chain_id),
-                .block_base_fee = .{ .bytes = [_]u8{0} ** (32 - 4) ++ block.header.base_fee_per_gas }, // TODO(jsign): check this.
-                .blob_hashes = null, // TODO
-                .blob_hashes_count = 0, // TODO
-            };
-            try self.run_txn(txn);
+            try self.run_txn(block, txn);
         }
 
         self.tx_context = null;
@@ -102,76 +88,72 @@ pub const VM = struct {
         }
     }
 
-    fn run_txn(self: *VM, txn: Transaction) !void {
+    fn run_txn(self: *VM, block: Block, txn: Transaction) !void {
+        // TODO(jsign): check why we need @intCast(), as in, why EVMC expects signed integers?
+        self.tx_context = evmc.struct_evmc_tx_context{
+            .tx_gas_price = util.to_evmc_bytes32(txn.gas_price),
+            .tx_origin = util.to_evmc_address(txn.get_from()),
+            .block_coinbase = .{ .bytes = block.header.fee_recipient },
+            .block_number = @intCast(block.header.block_number),
+            .block_timestamp = @intCast(block.header.timestamp),
+            .block_gas_limit = @intCast(block.header.gas_limit),
+            .block_prev_randao = .{ .bytes = block.header.prev_randao },
+            .chain_id = util.to_evmc_bytes32(txn.chain_id),
+            .block_base_fee = .{ .bytes = [_]u8{0} ** (32 - 4) ++ block.header.base_fee_per_gas }, // TODO(jsign): check this.
+            .blob_hashes = null, // TODO
+            .blob_hashes_count = 0, // TODO
+        };
+
         const from_addr = txn.get_from();
+
         var remaining_gas: i64 = @intCast(txn.gas_limit);
 
-        if (txn.to) |to| {
-            assert(!std.mem.eql(u8, &to, &std.mem.zeroes(Address)));
+        // Sender nonce updating.
+        if (txn.nonce +% 1 < txn.nonce) {
+            return error.MaxNonce;
+        }
+        try self.statedb.*.set_nonce(from_addr, txn.nonce + 1);
 
-            if (txn.nonce +% 1 < txn.nonce) {
-                return error.MaxNonce;
-            }
+        // Charge intrinsic gas costs.
+        // TODO(jsign): this is incomplete.
+        try charge_gas(&remaining_gas, txn_base_gas);
 
-            try self.statedb.*.set_nonce(from_addr, txn.nonce + 1);
+        if (txn.to) |to_addr| {
+            assert(!std.mem.eql(u8, &to_addr, &std.mem.zeroes(Address)));
 
-            // TODO(jsign): this is incomplete.
-            try charge_gas(&remaining_gas, txn_base_gas);
-
-            var account_to = try self.statedb.get(to);
+            // Send transaction value to the recipient.
             if (txn.value > 0) { // TODO(jsign): incomplete
-                account_to.balance += txn.value;
+                try self.statedb.add_balance(to_addr, txn.value);
             }
 
-            // Contract call
-            const recipient_code = account_to.code;
-            if (recipient_code.len != 0) {
-                const message = evmc.struct_evmc_message{
-                    .kind = evmc.EVMC_CALL, // TODO(jsign): generalize.
-                    .flags = 0, // TODO: STATIC?
-                    .depth = 0,
-                    .gas = @intCast(remaining_gas), // TODO(jsign): why evmc expects a i64 for gas instead of u64?
-                    .recipient = util.to_evmc_address(txn.to),
-                    .sender = util.to_evmc_address(from_addr),
-                    .input_data = txn.data.ptr,
-                    .input_size = txn.data.len,
-                    .value = blk: {
-                        var txn_value: [32]u8 = undefined;
-                        std.mem.writeIntSliceBig(u256, &txn_value, txn.value);
-                        break :blk .{ .bytes = txn_value };
-                    },
-                    .create2_salt = .{
-                        .bytes = [_]u8{0} ** 32, // TODO: fix this.
-                    },
-                    .code_address = util.to_evmc_address(txn.to), // TODO: fix this when .kind is generalized.
-                };
-                log.debug(
-                    "executing transaction sender={} receipient={}",
-                    .{
-                        std.fmt.fmtSliceHexLower(&message.sender.bytes),
-                        std.fmt.fmtSliceHexLower(&message.recipient.bytes),
-                    },
-                ); // TODO(jsign): add txn hash when available.
+            self.exec_context = ExecutionContext{
+                .address = from_addr,
+            };
+            const msg = evmc.struct_evmc_message{
+                .kind = evmc.EVMC_CALL, // TODO(jsign): generalize.
+                .flags = 0, // TODO: STATIC?
+                .depth = 0,
+                .gas = @intCast(remaining_gas), // TODO(jsign): why evmc expects a i64 for gas instead of u64?
+                .recipient = util.to_evmc_address(txn.to),
+                .sender = util.to_evmc_address(from_addr),
+                .input_data = txn.data.ptr,
+                .input_size = txn.data.len,
+                .value = blk: {
+                    var txn_value: [32]u8 = undefined;
+                    std.mem.writeIntSliceBig(u256, &txn_value, txn.value);
+                    break :blk .{ .bytes = txn_value };
+                },
+                .create2_salt = .{
+                    .bytes = [_]u8{0} ** 32, // TODO: fix this.
+                },
+                .code_address = util.to_evmc_address(txn.to), // TODO: fix this when .kind is generalized.
+            };
+            const result = call(@ptrCast(self), @ptrCast(&msg));
 
-                // Initialize the execution context.
-                self.exec_context = ExecutionContext{
-                    .address = from_addr,
-                };
+            log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
 
-                // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
-                var result = self.evm.*.execute.?(
-                    self.evm,
-                    @ptrCast(&self.host),
-                    @ptrCast(self),
-                    evmc.EVMC_SHANGHAI,
-                    @ptrCast(&message),
-                    recipient_code.ptr,
-                    recipient_code.len,
-                );
-                log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
-
-                remaining_gas = result.gas_left + result.gas_refund;
-            }
+            remaining_gas = result.gas_left + result.gas_refund;
+            // }
         } else { // Contract creation.
             @panic("TODO contract creation");
         }
