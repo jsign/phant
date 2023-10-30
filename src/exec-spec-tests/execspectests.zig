@@ -1,5 +1,5 @@
 const std = @import("std");
-const rlp = @import("zig-rlp");
+const rlp = @import("rlp");
 const Allocator = std.mem.Allocator;
 const types = @import("../types/types.zig");
 const Address = types.Address;

@@ -1,5 +1,5 @@
 .{
-    .name = "zig-rlp",
+    .name = "phant",
     .version = "0.0.1-beta-0",
     .dependencies = .{
         .@"zig-rlp" = .{
@@ -10,5 +10,9 @@
             .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-3.tar.gz",
             .hash = "1220fcf062f8ee89b343e1588ac3cc002f37ee3f72841dd7f9493d9c09acad7915a3",
         },
+        .zap = .{
+            .url = "https://github.com/zigzap/zap/archive/refs/tags/v0.1.14-pre.tar.gz",
+            .hash = "122067d12bc7abb93f7ce623f61b94cadfdb180cef12da6559d092e6b374202acda3",
+        }
     },
 }
