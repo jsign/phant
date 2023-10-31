@@ -6,5 +6,9 @@
             .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.0.1-beta-0.tar.gz",
             .hash = "122000e0811d6cb4758f6122b1de2d384efa32b9b2714caec2236f6b34b0529d699c",
         },
+        .@"zig-eth-secp256k1" = .{
+            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-1.tar.gz",
+            .hash = "12207f816de4045e6cffce82a0e8242c61cf93911cfeaf4adfb4e2f763b03b7dd4bb",
+        },
     },
 }

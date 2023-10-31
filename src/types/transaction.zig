@@ -1,4 +1,5 @@
 const std = @import("std");
+const secp256k1 = @import("zig-eth-secp256k1");
 const types = @import("types.zig");
 const Address = types.Address;
 
@@ -26,8 +27,9 @@ pub fn init(type_: u8, chain_id: u256, nonce: u64, gas_price: u256, value: u256,
     };
 }
 
-// TODO(jsign): use some secp256k1 library.
 pub fn get_from(_: *const @This()) Address {
+    var secp = secp256k1.Secp256k1.init();
+    _ = secp;
     const from: Address = comptime blk: {
         var buf: Address = undefined;
         _ = std.fmt.hexToBytes(&buf, "a94f5374Fce5edBC8E2a8697C15331677e6EbF0B") catch unreachable;
