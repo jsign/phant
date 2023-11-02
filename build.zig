@@ -11,14 +11,14 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
-    const mod_rlp = b.dependency("zig-rlp", .{}).module("zig-rlp");
-    const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{});
-    const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
-
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    const mod_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize }).module("zig-rlp");
+    const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
+    const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
 
     const ethash = b.addStaticLibrary(.{
         .name = "ethash",
