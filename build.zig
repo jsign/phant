@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize }).module("zig-rlp");
+    const mod_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize }).module("rlp");
     const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
 
@@ -86,6 +86,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
     exe.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
+    exe.addIncludePath(LazyPath{ .path = "ethash/include" });
     if (target.getCpuArch() == .x86_64) {
         // On x86_64, some functions are missing from the static library,
         // so we define dummy functions to make sure that it compiles.

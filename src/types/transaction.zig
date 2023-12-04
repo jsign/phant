@@ -63,7 +63,7 @@ pub fn hash(self: Txn, allocator: Allocator) !types.Hash32 {
     var out = std.ArrayList(u8).init(allocator);
     defer out.deinit();
 
-    try rlp.serialize(TxnData, self.data, &out);
+    try rlp.serialize(TxnData, allocator, self.data, &out);
 
     return hasher.keccak256(out.items);
 }
