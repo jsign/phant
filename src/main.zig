@@ -77,4 +77,5 @@ test "tests" {
     _ = @import("exec-spec-tests/execspectests.zig");
     _ = @import("types/types.zig");
     _ = @import("vm/vm.zig");
+    _ = @import("crypto/ecdsa.zig");
 }

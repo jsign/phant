@@ -2,9 +2,11 @@ const evmc = @cImport({
     @cInclude("evmone.h");
 });
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const util = @import("util.zig");
 const types = @import("../types/types.zig");
 const Transaction = types.Transaction;
+const TxnSigner = @import("../signer/signer.zig").TxnSigner;
 const Block = types.Block;
 const AccountState = types.AccountState;
 const Bytecode = types.Bytecode;
@@ -84,7 +86,7 @@ pub const VM = struct {
         // TODO(jsign): check freeing evmone instance.
     }
 
-    pub fn run_block(self: *VM, block: Block, txns: []const Transaction) !void {
+    pub fn run_block(self: *VM, allocator: Allocator, txn_signer: TxnSigner, block: Block, txns: []const Transaction) !void {
         log.debug("run block number={d}", .{block.header.block_number});
         // TODO: stashing area.
 
@@ -97,7 +99,7 @@ pub const VM = struct {
 
         for (txns) |txn| {
             // Set the transaction context.
-            self.context.?.txn = gen_txn_context(txn);
+            self.context.?.txn = try gen_txn_context(allocator, txn_signer, txn);
 
             try self.run_txn(txn);
         }
@@ -117,35 +119,35 @@ pub const VM = struct {
         };
     }
 
-    fn gen_txn_context(txn: Transaction) TxnContext {
+    fn gen_txn_context(allocator: Allocator, txn_signer: TxnSigner, txn: Transaction) !TxnContext {
         return TxnContext{
-            .chain_id = txn.chain_id,
-            .gas_price = txn.gas_price,
-            .from = txn.get_from(),
+            .chain_id = txn.data.chain_id,
+            .gas_price = txn.data.gas_price,
+            .from = try txn_signer.get_sender(allocator, txn),
         };
     }
 
     fn run_txn(self: *VM, txn: Transaction) !void {
-        const from_addr = txn.get_from();
+        const from_addr = self.*.context.?.txn.from;
 
-        var remaining_gas: i64 = @intCast(txn.gas_limit);
+        var remaining_gas: i64 = @intCast(txn.data.gas_limit);
 
         // Sender nonce updating.
-        if (txn.nonce +% 1 < txn.nonce) {
+        if (txn.data.nonce +% 1 < txn.data.nonce) {
             return error.MaxNonce;
         }
-        try self.statedb.*.set_nonce(from_addr, txn.nonce + 1);
+        try self.statedb.*.set_nonce(from_addr, txn.data.nonce + 1);
 
         // Charge intrinsic gas costs.
         // TODO(jsign): this is incomplete.
         try charge_gas(&remaining_gas, txn_base_gas);
 
-        if (txn.to) |to_addr| {
+        if (txn.data.to) |to_addr| {
             assert(!std.mem.eql(u8, &to_addr, &std.mem.zeroes(Address)));
 
             // Send transaction value to the recipient.
-            if (txn.value > 0) { // TODO(jsign): incomplete
-                try self.statedb.add_balance(to_addr, txn.value);
+            if (txn.data.value > 0) { // TODO(jsign): incomplete
+                try self.statedb.add_balance(to_addr, txn.data.value);
             }
 
             self.context.?.execution = ExecutionContext{
@@ -156,19 +158,19 @@ pub const VM = struct {
                 .flags = 0, // TODO: STATIC?
                 .depth = 0,
                 .gas = @intCast(remaining_gas), // TODO(jsign): why evmc expects a i64 for gas instead of u64?
-                .recipient = util.to_evmc_address(txn.to),
+                .recipient = util.to_evmc_address(txn.data.to),
                 .sender = util.to_evmc_address(from_addr),
-                .input_data = txn.data.ptr,
-                .input_size = txn.data.len,
+                .input_data = txn.data.data.ptr,
+                .input_size = txn.data.data.len,
                 .value = blk: {
                     var txn_value: [32]u8 = undefined;
-                    std.mem.writeIntSliceBig(u256, &txn_value, txn.value);
+                    std.mem.writeIntSliceBig(u256, &txn_value, txn.data.value);
                     break :blk .{ .bytes = txn_value };
                 },
                 .create2_salt = .{
                     .bytes = [_]u8{0} ** 32, // TODO: fix this.
                 },
-                .code_address = util.to_evmc_address(txn.to), // TODO: fix this when .kind is generalized.
+                .code_address = util.to_evmc_address(txn.data.to), // TODO: fix this when .kind is generalized.
             };
             const result = call(@ptrCast(self), @ptrCast(&msg));
 
@@ -180,7 +182,7 @@ pub const VM = struct {
             @panic("TODO contract creation");
         }
 
-        const gas_used = @as(i64, @intCast(txn.gas_limit)) - remaining_gas; // TODO(jsign): decide on casts.
+        const gas_used = @as(i64, @intCast(txn.data.gas_limit)) - remaining_gas; // TODO(jsign): decide on casts.
 
         // Coinbase rewards.
         const gas_tip = 0xa - 0x7; // TODO(jsign): fix, pull from tx_context.
