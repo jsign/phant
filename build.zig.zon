@@ -7,8 +7,8 @@
             .hash = "122000e0811d6cb4758f6122b1de2d384efa32b9b2714caec2236f6b34b0529d699c",
         },
         .@"zig-eth-secp256k1" = .{
-            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-2.tar.gz",
-            .hash = "1220eac83d1b17e9eadbde506731c923fe6f075858687d86628142d0c6b15cd4e534",
+            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-3.tar.gz",
+            .hash = "1220fcf062f8ee89b343e1588ac3cc002f37ee3f72841dd7f9493d9c09acad7915a3",
         },
     },
 }
