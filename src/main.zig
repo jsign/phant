@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types/types.zig");
+const ecdsa = @import("crypto/ecdsa.zig");
 const AccountState = types.AccountState;
 const Address = types.Address;
 const VM = @import("vm/vm.zig").VM;
@@ -38,7 +39,7 @@ pub fn main() !void {
     };
 
     // Create some dummy transaction.
-    const txn = Transaction{
+    var txn = Transaction{
         .data = .{
             .type = 0,
             .chain_id = 1,
@@ -53,6 +54,10 @@ pub fn main() !void {
         .s = 0,
         .v = 0,
     };
+    var privkey: ecdsa.PrivateKey = undefined;
+    _ = try std.fmt.hexToBytes(&privkey, "45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8");
+    const sig = try txn_signer.sign(allocator, txn, privkey);
+    txn.setSignature(sig.v, sig.r, sig.s);
 
     // Create the corresponding AccountState for txn.to, in particular with relevant bytecode
     // so the transaction can be properly executed.
