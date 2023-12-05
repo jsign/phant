@@ -10,6 +10,8 @@ const BlockHeader = types.BlockHeader;
 const vm = @import("../vm/vm.zig");
 const VM = vm.VM;
 const StateDB = vm.StateDB;
+const TxnSigner = @import("../signer/signer.zig").TxnSigner;
+const ecdsa = @import("../crypto/ecdsa.zig");
 const log = std.log.scoped(.execspectests);
 
 const HexString = []const u8;
@@ -69,6 +71,7 @@ pub const FixtureTest = struct {
         var evm = VM.init(&db);
 
         // 2. Execute blocks.
+        const txn_signer = try TxnSigner.init();
         for (self.blocks) |encoded_block| {
             var out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             defer allocator.free(out);
@@ -79,10 +82,10 @@ pub const FixtureTest = struct {
             var txns = try allocator.alloc(Transaction, encoded_block.transactions.len);
             defer allocator.free(txns);
             for (encoded_block.transactions, 0..) |tx_hex, i| {
-                txns[i] = try tx_hex.to_vm_transaction(allocator);
+                txns[i] = try tx_hex.to_vm_transaction(allocator, txn_signer);
             }
 
-            try evm.run_block(block, txns);
+            try evm.run_block(allocator, txn_signer, block, txns);
         }
 
         // 3. Verify that the post state matches what the fixture `postState` claims is true.
@@ -145,7 +148,7 @@ pub const TransactionHex = struct {
     data: HexString,
     gasLimit: HexString,
 
-    pub fn to_vm_transaction(self: *const TransactionHex, allocator: Allocator) !Transaction {
+    pub fn to_vm_transaction(self: TransactionHex, allocator: Allocator, txn_signer: TxnSigner) !Transaction {
         const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
         const chain_id = try std.fmt.parseInt(u256, self.chainId[2..], 16);
         const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
@@ -160,7 +163,13 @@ pub const TransactionHex = struct {
         _ = try std.fmt.hexToBytes(data, self.data[2..]);
         const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
 
-        return Transaction.init(type_, chain_id, nonce, gas_price, value, to, data, gas_limit);
+        var txn = Transaction.init(type_, chain_id, nonce, gas_price, value, to, data, gas_limit);
+        var privkey: ecdsa.PrivateKey = undefined;
+        _ = try std.fmt.hexToBytes(&privkey, self.secretKey[2..]);
+        const sig = try txn_signer.sign(allocator, txn, privkey);
+        txn.setSignature(sig.v, sig.r, sig.s);
+
+        return txn;
     }
 };
 

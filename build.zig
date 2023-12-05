@@ -11,12 +11,14 @@ pub fn build(b: *std.Build) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
-    const mod_rlp = b.dependency("zig-rlp", .{}).module("zig-rlp");
-
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    const mod_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize }).module("rlp");
+    const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
+    const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
 
     const ethash = b.addStaticLibrary(.{
         .name = "ethash",
@@ -96,6 +98,8 @@ pub fn build(b: *std.Build) void {
     exe.linkLibrary(evmone);
     exe.linkLibC();
     exe.addModule("zig-rlp", mod_rlp);
+    exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
+    exe.addModule("zig-eth-secp256k1", mod_secp256k1);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -146,6 +150,8 @@ pub fn build(b: *std.Build) void {
     unit_tests.linkLibrary(evmone);
     unit_tests.linkLibC();
     unit_tests.addModule("zig-rlp", mod_rlp);
+    unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
+    unit_tests.addModule("zig-eth-secp256k1", mod_secp256k1);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;
