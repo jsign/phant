@@ -86,7 +86,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
     exe.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
-    exe.addIncludePath(LazyPath{ .path = "ethash/include" });
     if (target.getCpuArch() == .x86_64) {
         // On x86_64, some functions are missing from the static library,
         // so we define dummy functions to make sure that it compiles.
@@ -139,7 +138,6 @@ pub fn build(b: *std.Build) void {
     });
     unit_tests.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
     unit_tests.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
-    unit_tests.addIncludePath(LazyPath{ .path = "ethash/include" });
     if (target.getCpuArch() == .x86_64) {
         // On x86_64, some functions are missing from the static library,
         // so we define dummy functions to make sure that it compiles.

@@ -60,7 +60,7 @@ pub fn main() !void {
         0x61, 0x41, 0x42, // PUSH2 0x4142
         0x31, // BALANCE
     };
-    const sender_addr = [_]u8{0} ** 20; //try txn_signer.get_sender(allocator, txn);
+    const sender_addr = try txn_signer.get_sender(allocator, txn);
     var account_state = try AccountState.init(allocator, sender_addr, 0, 1_000_000, &code);
     defer account_state.deinit();
 
