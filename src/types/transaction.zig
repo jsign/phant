@@ -213,8 +213,7 @@ pub const FeeMarketTxn = struct {
 };
 
 test "LegacyTxn (post EIP-155) hashing" {
-    // Pulled from mainnet:
-    // https://etherscan.io/getRawTx?tx=0x4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c
+    // https://etherscan.io/tx/0x4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c
     const legacy_txn_hex = "f870830ce12a8505767265bc83015f9094f8c911c68f6a6b912fe735bbd953c3379336cbf3880df3bcfddc7af5748026a0b9a3cc95c11c7374458f12ca10a7d43949b99b9e3437806c6de78855b1059683a01cd240e45f48cb94e7e9e40184cd72d09865a8a2ecae62f62d3cc343877d56ae";
     var legacy_txn_bytes: [legacy_txn_hex.len / 2]u8 = undefined;
     _ = try std.fmt.hexToBytes(&legacy_txn_bytes, legacy_txn_hex);
