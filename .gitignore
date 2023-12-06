@@ -20,3 +20,4 @@ zig-out/
 /intx/
 /evmone/
 /lib/evmone/
+.vscode
