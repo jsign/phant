@@ -1,12 +1,13 @@
 const std = @import("std");
 const types = @import("types/types.zig");
 const ecdsa = @import("crypto/ecdsa.zig");
+const config = @import("config/config.zig");
 const AccountState = types.AccountState;
 const Address = types.Address;
 const VM = @import("vm/vm.zig").VM;
 const StateDB = @import("vm/statedb.zig");
 const Block = types.Block;
-const Transaction = types.Transaction;
+const Txn = types.Txn;
 const TxnSigner = @import("signer/signer.zig").TxnSigner;
 const zap = @import("zap");
 const engine_api = @import("engine_api/engine_api.zig");
@@ -54,7 +55,7 @@ pub fn main() !void {
     allocator = gpa.allocator();
 
     std.log.info("Welcome to phant! 🐘", .{});
-    const txn_signer = try TxnSigner.init();
+    const txn_signer = try TxnSigner.init(@intFromEnum(config.ChainId.Mainnet));
 
     // Create block.
     const block = Block{
@@ -82,7 +83,11 @@ pub fn main() !void {
     };
 
     // Create some dummy transaction.
-    const txn = Transaction.Txn.initLegacyTxn(1, 0, 10, 0, [_]u8{0} ** 18 ++ [_]u8{ 0x41, 0x42 }, &[_]u8{}, 100_000);
+    var txn = Txn.initLegacyTxn(1, 0, 10, 0, [_]u8{0} ** 18 ++ [_]u8{ 0x41, 0x42 }, &[_]u8{}, 100_000);
+    var privkey: ecdsa.PrivateKey = undefined;
+    _ = try std.fmt.hexToBytes(&privkey, "45a915e4d060149eb4365960e6a7a45f334393093061116b197e3240065ff2d8");
+    const sig = try txn_signer.sign(allocator, txn, privkey);
+    txn.setSignature(sig.v, sig.r, sig.s);
 
     // Create the corresponding AccountState for txn.to, in particular with relevant bytecode
     // so the transaction can be properly executed.
@@ -102,7 +107,7 @@ pub fn main() !void {
     var vm = VM.init(&statedb);
 
     // Execute block with txns.
-    vm.run_block(allocator, txn_signer, block, &[_]Transaction.Txn{txn}) catch |err| {
+    vm.run_block(allocator, txn_signer, block, &[_]Txn{txn}) catch |err| {
         std.log.err("error executing transaction: {}", .{err});
         return;
     };
