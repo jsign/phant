@@ -145,7 +145,21 @@ pub const AccessListTuple = struct {
     StorageKeys: []const Hash32,
 };
 
-pub const AccessListTxn = struct {};
+pub const AccessListTxn = struct {
+    data: struct {
+        chain_id: u64,
+        nonce: u256,
+        gas_price: u256,
+        gas: u64,
+        to: ?Address,
+        value: u256,
+        data: []const u8,
+        access_list: []AccessListTuple,
+    },
+    y_parity: u1,
+    r: u256,
+    s: u256,
+};
 
 pub const FeeMarketTxn = struct {
     data: struct {
