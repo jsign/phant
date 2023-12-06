@@ -147,6 +147,21 @@ pub const AccessListTuple = struct {
 
 pub const AccessListTxn = struct {};
 
-pub const FeeMarketTxn = struct {};
+pub const FeeMarketTxn = struct {
+    data: struct {
+        chain_id: u64,
+        nonce: u256,
+        max_priority_fee_per_gas: u64,
+        max_fee_per_gas: u64,
+        gas: u64,
+        to: ?Address,
+        value: u256,
+        data: []const u8,
+        access_list: []AccessListTuple,
+    },
+    y_parity: u1,
+    r: u256,
+    s: u256,
+};
 
 // TODO: tests for each transaction type from mainnet (RLP decoding without signatures + transaction hashing)
