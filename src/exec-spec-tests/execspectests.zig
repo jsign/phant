@@ -72,7 +72,7 @@ pub const FixtureTest = struct {
         var evm = VM.init(&db);
 
         // 2. Execute blocks.
-        const txn_signer = try TxnSigner.init(@intFromEnum(config.ChainId.Mainnet));
+        const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
         for (self.blocks) |encoded_block| {
             var out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             defer allocator.free(out);
@@ -153,6 +153,9 @@ pub const TransactionHex = struct {
         const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
         std.debug.assert(type_ == 0);
         const chain_id = try std.fmt.parseInt(u64, self.chainId[2..], 16);
+        if (chain_id != txn_signer.chain_id) {
+            return error.InvalidChainId;
+        }
         const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
         const gas_price = try std.fmt.parseUnsigned(u256, self.gasPrice[2..], 16);
         const value = try std.fmt.parseUnsigned(u256, self.value[2..], 16);
@@ -165,7 +168,7 @@ pub const TransactionHex = struct {
         _ = try std.fmt.hexToBytes(data, self.data[2..]);
         const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
 
-        var txn = Txn.initLegacyTxn(chain_id, nonce, gas_price, value, to, data, gas_limit);
+        var txn = Txn.initLegacyTxn(nonce, gas_price, value, to, data, gas_limit);
         var privkey: ecdsa.PrivateKey = undefined;
         _ = try std.fmt.hexToBytes(&privkey, self.secretKey[2..]);
         const sig = try txn_signer.sign(allocator, txn, privkey);
