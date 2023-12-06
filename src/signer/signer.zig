@@ -2,10 +2,12 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ecdsa = @import("../crypto/ecdsa.zig");
 const types = @import("../types/types.zig");
+const rlp = @import("zig-rlp");
+const hasher = @import("../crypto/hasher.zig");
 const Txn = types.Txn;
+const Hash32 = types.Hash32;
 const SignatureValues = types.SignatureValues;
 const Address = @import("../types/types.zig").Address;
-const hasher = @import("../crypto/hasher.zig");
 
 // TODO: TxnSigner should be generalized to:
 // - Only accept correct transactions types depending on the fork we're in.
@@ -23,7 +25,7 @@ pub const TxnSigner = struct {
     }
 
     pub fn sign(self: TxnSigner, allocator: Allocator, txn: Txn, privkey: ecdsa.PrivateKey) !SignatureValues {
-        const txn_hash = try txn.hash(allocator);
+        const txn_hash = try self.hashTxn(allocator, txn);
 
         const ecdsa_sig = try self.ecdsa_signer.sign(txn_hash, privkey);
         const r = std.mem.readIntSlice(u256, ecdsa_sig[0..32], std.builtin.Endian.Big);
@@ -35,7 +37,7 @@ pub const TxnSigner = struct {
     }
 
     pub fn get_sender(self: TxnSigner, allocator: Allocator, txn: Txn) !Address {
-        const txn_hash = try txn.hash(allocator);
+        const txn_hash = try self.hashTxn(allocator, txn);
 
         const txn_sig = txn.getSignature();
         var sig: ecdsa.Signature = undefined;
@@ -57,6 +59,40 @@ pub const TxnSigner = struct {
 
         const pubkey = try self.ecdsa_signer.erecover(sig, txn_hash);
         return hasher.keccak256(pubkey[1..])[12..].*;
+    }
+
+    fn hashTxn(self: TxnSigner, allocator: Allocator, transaction: Txn) !Hash32 {
+        return switch (transaction) {
+            Txn.LegacyTxn => |txn| blk: {
+                // Sign using EIP-155 (since ~Nov 2016).
+                const legacyTxnRLP = struct {
+                    nonce: u64,
+                    gas_price: u256,
+                    gas_limit: u64,
+                    to: ?Address,
+                    value: u256,
+                    data: []const u8,
+                    chain_id: u64,
+                    zero1: u8 = 0,
+                    zero2: u8 = 0,
+                };
+
+                var out = std.ArrayList(u8).init(allocator);
+                defer out.deinit();
+
+                try rlp.serialize(legacyTxnRLP, allocator, .{
+                    .nonce = txn.nonce,
+                    .gas_price = txn.gas_price,
+                    .gas_limit = txn.gas_limit,
+                    .to = txn.to,
+                    .value = txn.value,
+                    .data = txn.data,
+                    .chain_id = self.chain_id,
+                }, &out);
+
+                break :blk hasher.keccak256(out.items);
+            },
+        };
     }
 };
 
