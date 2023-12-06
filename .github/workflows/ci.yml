@@ -47,6 +47,10 @@ jobs:
     - name: Test
       run: git submodule update --init --recursive && zig build test
 
+    - name: Run
+      run: zig build run
+
+
   build-aarch64:
     runs-on: self-hosted
     steps:
