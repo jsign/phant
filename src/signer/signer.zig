@@ -33,7 +33,7 @@ pub const TxnSigner = struct {
         const s = std.mem.readIntSlice(u256, ecdsa_sig[32..64], std.builtin.Endian.Big);
         const v = switch (txn) {
             Txn.LegacyTxn => 35 + 2 * self.chain_id, // We sign using EIP155 since 2016.
-            Txn.FeeMarketTxn => 0,
+            Txn.AccessListTxn, Txn.FeeMarketTxn => 0,
         } + ecdsa_sig[64];
         return .{ .r = r, .s = s, .v = v };
     }
@@ -57,6 +57,11 @@ pub const TxnSigner = struct {
                     return error.EIP155_v;
                 }
                 break :blk @intCast(txn.v - v_eip155);
+            },
+            Txn.AccessListTxn => |txn| blk: {
+                std.mem.writeIntSlice(u256, sig[0..32], txn.r, std.builtin.Endian.Big);
+                std.mem.writeIntSlice(u256, sig[32..64], txn.s, std.builtin.Endian.Big);
+                break :blk @intCast(txn.y_parity);
             },
             Txn.FeeMarketTxn => |txn| blk: {
                 std.mem.writeIntSlice(u256, sig[0..32], txn.r, std.builtin.Endian.Big);
@@ -100,7 +105,6 @@ pub const TxnSigner = struct {
                 break :blk hasher.keccak256(out.items);
             },
             Txn.FeeMarketTxn => |txn| blk: {
-                // Txn encoding using EIP-155 (since ~Nov 2016).
                 const feeMarketRLP = struct {
                     chain_id: u64,
                     nonce: u256,
@@ -127,6 +131,32 @@ pub const TxnSigner = struct {
                     .access_list = txn.access_list,
                 }, &out);
                 break :blk hasher.keccak256WithPrefix(&[_]u8{@intFromEnum(Txn.FeeMarketTxn)}, out.items);
+            },
+            Txn.AccessListTxn => |txn| blk: {
+                const accessListRLP = struct {
+                    chain_id: u64,
+                    nonce: u64,
+                    gas_price: u256,
+                    gas: u64,
+                    to: ?Address,
+                    value: u256,
+                    data: []const u8,
+                    access_list: []AccessListTuple,
+                };
+
+                var out = std.ArrayList(u8).init(allocator);
+                defer out.deinit();
+                try rlp.serialize(accessListRLP, allocator, .{
+                    .chain_id = txn.chain_id,
+                    .nonce = txn.nonce,
+                    .gas_price = txn.gas_price,
+                    .gas = txn.gas,
+                    .to = txn.to,
+                    .value = txn.value,
+                    .data = txn.data,
+                    .access_list = txn.access_list,
+                }, &out);
+                break :blk hasher.keccak256WithPrefix(&[_]u8{@intFromEnum(Txn.AccessListTxn)}, out.items);
             },
         };
     }
