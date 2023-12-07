@@ -232,12 +232,12 @@ pub fn RLPHash(comptime T: type, allocator: Allocator, txn: T, prefix: ?[]const 
     return hasher.keccak256(out.items);
 }
 
-test "Transaction hashing" {
+test "Mainnet transactions hashing" {
     const testCase = struct {
         rlp_encoded: []const u8,
         expected_hash: []const u8,
     };
-    const txns = [_]testCase{
+    const test_cases = [_]testCase{
         .{
             // LegacyTxn (post EIP-155)
             // https://etherscan.io/tx/0x4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c
@@ -253,12 +253,12 @@ test "Transaction hashing" {
         // TODO: add test for AccessListTxn type.
     };
 
-    inline for (txns) |test_txn| {
-        var txn_bytes: [test_txn.rlp_encoded.len / 2]u8 = undefined;
-        _ = try std.fmt.hexToBytes(&txn_bytes, test_txn.rlp_encoded);
+    inline for (test_cases) |testcase| {
+        var txn_bytes: [testcase.rlp_encoded.len / 2]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&txn_bytes, testcase.rlp_encoded);
 
         const txn = try Txn.decode(&txn_bytes);
         const hash = try txn.hash(std.testing.allocator);
-        try std.testing.expectEqualStrings(test_txn.expected_hash, &std.fmt.bytesToHex(hash, std.fmt.Case.lower));
+        try std.testing.expectEqualStrings(testcase.expected_hash, &std.fmt.bytesToHex(hash, std.fmt.Case.lower));
     }
 }
