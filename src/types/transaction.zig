@@ -6,17 +6,16 @@ const types = @import("types.zig");
 const Address = types.Address;
 const Hash32 = types.Hash32;
 
-pub const SignatureValues = struct { r: u256, s: u256, v: u256 };
-
-pub const TxnTypes = enum {
-    LegacyTxn,
+pub const TxnTypes = enum(u4) {
+    LegacyTxn = 0,
     // TODO
     //     AccessListTransaction,
-    //     FeeMarketTransaction,
+    FeeMarketTxn = 2,
 };
 
 pub const Txn = union(TxnTypes) {
     LegacyTxn: LegacyTxn,
+    FeeMarketTxn: FeeMarketTxn,
     // AccessListTransaction: AccessListTxn,
     // FeeMarketTransaction: FeeMarketTxn,
 
@@ -32,12 +31,12 @@ pub const Txn = union(TxnTypes) {
             return error.EncodedTxnCannotBeEmpty;
         }
 
-        // EIP-2930: Transaction Type Transaction
-        // if (bytes[0] <= 0x7f) {
-        //     if (bytes[0] == 0x01) return AccessListTxn.decode(bytes);
-        //     if (bytes[0] == 0x02) return FeeMarketTxn.decode(bytes);
-        //     return error.UnsupportedEIP2930TxnType;
-        // }
+        // EIP-2718: Transaction Type Transaction
+        if (bytes[0] <= 0x7f) {
+            //     if (bytes[0] == 0x01) return AccessListTxn.decode(bytes[1...]);
+            if (bytes[0] == 0x02) return Txn{ .FeeMarketTxn = try FeeMarketTxn.decode(bytes[1..]) };
+            return error.UnsupportedEIP2930TxnType;
+        }
 
         // LegacyTxn
         if (bytes[0] >= 0xc0 and bytes[0] <= 0xfe) return Txn{ .LegacyTxn = try LegacyTxn.decode(bytes) };
@@ -45,69 +44,66 @@ pub const Txn = union(TxnTypes) {
         return error.UnsupportedTxnType;
     }
 
-    pub fn txnHash(self: Txn) Hash32 {
+    pub fn hash(self: Txn, allocator: Allocator) !Hash32 {
         return switch (self) {
-            Txn.LegacyTxn => |txn| txn.LegacyTxn.txnHash(),
+            Txn.LegacyTxn => |txn| try txn.hash(allocator),
+            Txn.FeeMarketTxn => |txn| try txn.hash(allocator),
         };
     }
 
     pub fn getChainId(self: Txn) u64 {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.chainIdFromSignature(),
+            Txn.FeeMarketTxn => |txn| txn.chain_id,
         };
     }
 
     pub fn getGasPrice(self: Txn) u256 {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.gas_price,
+            Txn.FeeMarketTxn => |txn| txn.max_fee_per_gas,
         };
     }
 
     pub fn getNonce(self: Txn) u64 {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.nonce,
+            Txn.FeeMarketTxn => |txn| txn.nonce,
         };
     }
 
     pub fn getData(self: Txn) []const u8 {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.data,
+            Txn.FeeMarketTxn => |txn| txn.data,
         };
     }
 
     pub fn getTo(self: Txn) ?Address {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.to,
+            Txn.FeeMarketTxn => |txn| txn.to,
         };
     }
 
     pub fn getValue(self: Txn) u256 {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.value,
-        };
-    }
-
-    pub fn hash(self: Txn, allocator: Allocator) !Hash32 {
-        return switch (self) {
-            Txn.LegacyTxn => |txn| txn.hash(allocator),
+            Txn.FeeMarketTxn => |txn| txn.value,
         };
     }
 
     pub fn getGasLimit(self: Txn) u64 {
         return switch (self) {
             Txn.LegacyTxn => |txn| txn.gas_limit,
-        };
-    }
-
-    pub fn getSignature(self: Txn) SignatureValues {
-        return switch (self) {
-            Txn.LegacyTxn => |txn| txn.getSignature(),
+            Txn.FeeMarketTxn => |txn| txn.gas,
         };
     }
 
     pub fn setSignature(self: *Txn, v: u256, r: u256, s: u256) void {
         switch (self.*) {
             Txn.LegacyTxn => |*txn| txn.setSignature(v, r, s),
+            Txn.FeeMarketTxn => |*txn| txn.setSignature(v, r, s),
         }
     }
 };
@@ -140,22 +136,13 @@ pub const LegacyTxn = struct {
     // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
     // output transaction.
     pub fn decode(bytes: []const u8) !LegacyTxn {
-        var txn: LegacyTxn = undefined;
-        _ = try rlp.deserialize(LegacyTxn, bytes, &txn);
-        return txn;
+        return try RLPDecode(LegacyTxn, bytes);
     }
 
     pub fn hash(self: LegacyTxn, allocator: Allocator) !Hash32 {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
-        var out = std.ArrayList(u8).init(allocator);
-        defer out.deinit();
-        try rlp.serialize(LegacyTxn, allocator, self, &out);
-        return hasher.keccak256(out.items);
-    }
-
-    pub fn getSignature(self: LegacyTxn) SignatureValues {
-        return SignatureValues{ .r = self.r, .s = self.s, .v = self.v };
+        return try RLPHash(LegacyTxn, allocator, self, null);
     }
 
     pub fn setSignature(self: *LegacyTxn, v: u256, r: u256, s: u256) void {
@@ -176,13 +163,13 @@ pub const LegacyTxn = struct {
 
 pub const AccessListTuple = struct {
     address: Address,
-    StorageKeys: []const Hash32,
+    StorageKeys: []Hash32,
 };
 
 pub const AccessListTxn = struct {
     data: struct {
         chain_id: u64,
-        nonce: u256,
+        nonce: u64,
         gas_price: u256,
         gas: u64,
         to: ?Address,
@@ -196,34 +183,82 @@ pub const AccessListTxn = struct {
 };
 
 pub const FeeMarketTxn = struct {
-    data: struct {
-        chain_id: u64,
-        nonce: u256,
-        max_priority_fee_per_gas: u64,
-        max_fee_per_gas: u64,
-        gas: u64,
-        to: ?Address,
-        value: u256,
-        data: []const u8,
-        access_list: []AccessListTuple,
-    },
-    y_parity: u1,
+    chain_id: u64,
+    nonce: u64,
+    max_priority_fee_per_gas: u64,
+    max_fee_per_gas: u64,
+    gas: u64,
+    to: ?Address,
+    value: u256,
+    data: []const u8,
+    access_list: []AccessListTuple,
+    y_parity: u256,
     r: u256,
     s: u256,
+
+    pub fn hash(self: FeeMarketTxn, allocator: Allocator) !Hash32 {
+        // TODO: consider caching the calculated txnHash to avoid further
+        // allocations and keccaking. But be careful since struct fields are public.
+        const prefix = [_]u8{@intFromEnum(TxnTypes.FeeMarketTxn)};
+        return try RLPHash(FeeMarketTxn, allocator, self, &prefix);
+    }
+
+    pub fn setSignature(self: *FeeMarketTxn, v: u256, r: u256, s: u256) void {
+        self.*.y_parity = v;
+        self.*.r = r;
+        self.*.s = s;
+    }
+
+    // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
+    // output transaction.
+    pub fn decode(bytes: []const u8) !FeeMarketTxn {
+        return try RLPDecode(FeeMarketTxn, bytes);
+    }
 };
 
-test "LegacyTxn (post EIP-155) hashing" {
-    // https://etherscan.io/tx/0x4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c
-    const legacy_txn_hex = "f870830ce12a8505767265bc83015f9094f8c911c68f6a6b912fe735bbd953c3379336cbf3880df3bcfddc7af5748026a0b9a3cc95c11c7374458f12ca10a7d43949b99b9e3437806c6de78855b1059683a01cd240e45f48cb94e7e9e40184cd72d09865a8a2ecae62f62d3cc343877d56ae";
-    var legacy_txn_bytes: [legacy_txn_hex.len / 2]u8 = undefined;
-    _ = try std.fmt.hexToBytes(&legacy_txn_bytes, legacy_txn_hex);
-
-    const legacy_txn = try Txn.decode(&legacy_txn_bytes);
-    const hash = try legacy_txn.LegacyTxn.hash(std.testing.allocator);
-    try std.testing.expectEqualStrings(
-        "4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c",
-        &std.fmt.bytesToHex(hash, std.fmt.Case.lower),
-    );
+pub fn RLPDecode(comptime T: type, bytes: []const u8) !T {
+    var ret: T = std.mem.zeroes(T);
+    _ = try rlp.deserialize(T, bytes, &ret);
+    return ret;
 }
 
-// TODO: same tests for FeeMarketTxn and AccessListTxn
+pub fn RLPHash(comptime T: type, allocator: Allocator, txn: T, prefix: ?[]const u8) !Hash32 {
+    var out = std.ArrayList(u8).init(allocator);
+    defer out.deinit();
+    try rlp.serialize(T, allocator, txn, &out);
+    if (prefix) |pre| {
+        return hasher.keccak256WithPrefix(pre, out.items);
+    }
+    return hasher.keccak256(out.items);
+}
+
+test "Transaction hashing" {
+    const testCase = struct {
+        rlp_encoded: []const u8,
+        expected_hash: []const u8,
+    };
+    const txns = [_]testCase{
+        .{
+            // LegacyTxn (post EIP-155)
+            // https://etherscan.io/tx/0x4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c
+            .rlp_encoded = "f870830ce12a8505767265bc83015f9094f8c911c68f6a6b912fe735bbd953c3379336cbf3880df3bcfddc7af5748026a0b9a3cc95c11c7374458f12ca10a7d43949b99b9e3437806c6de78855b1059683a01cd240e45f48cb94e7e9e40184cd72d09865a8a2ecae62f62d3cc343877d56ae",
+            .expected_hash = "4debed4e6d4fdbc05c2f9198733b24f2f8b08452b6d3d70cb8f86bf0d3f7aa8c",
+        },
+        .{
+            // FeeMarketTxn (EIP-1559)
+            // https://etherscan.io/tx/0x8fe4006825c930e54e5c418a030cd57e90988eb627155aa366927afcfd2454ff
+            .rlp_encoded = "02f8710183063c3880850e58157afa825ac29427c115f0d823973743a5046139806adce5e9cfd58789c1870632dbf680c080a0569a22a4edf94faf30d55725d8529b70c3f5a1ec896efc262951d20335bc9e31a058631545d6756a8c4450b74509f9cf08f131f259f9bae8304518e7a12f2940d3",
+            .expected_hash = "8fe4006825c930e54e5c418a030cd57e90988eb627155aa366927afcfd2454ff",
+        },
+        // TODO: add test for AccessListTxn type.
+    };
+
+    inline for (txns) |test_txn| {
+        var txn_bytes: [test_txn.rlp_encoded.len / 2]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&txn_bytes, test_txn.rlp_encoded);
+
+        const txn = try Txn.decode(&txn_bytes);
+        const hash = try txn.hash(std.testing.allocator);
+        try std.testing.expectEqualStrings(test_txn.expected_hash, &std.fmt.bytesToHex(hash, std.fmt.Case.lower));
+    }
+}

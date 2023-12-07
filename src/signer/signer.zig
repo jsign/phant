@@ -5,9 +5,9 @@ const ecdsa = @import("../crypto/ecdsa.zig");
 const types = @import("../types/types.zig");
 const rlp = @import("zig-rlp");
 const hasher = @import("../crypto/hasher.zig");
+const AccessListTuple = types.AccessListTuple;
 const Txn = types.Txn;
 const Hash32 = types.Hash32;
-const SignatureValues = types.SignatureValues;
 const Address = @import("../types/types.zig").Address;
 
 // TODO: TxnSigner should be generalized to:
@@ -25,37 +25,43 @@ pub const TxnSigner = struct {
         };
     }
 
-    pub fn sign(self: TxnSigner, allocator: Allocator, txn: Txn, privkey: ecdsa.PrivateKey) !SignatureValues {
+    pub fn sign(self: TxnSigner, allocator: Allocator, txn: Txn, privkey: ecdsa.PrivateKey) !struct { r: u256, s: u256, v: u256 } {
         const txn_hash = try self.hashTxn(allocator, txn);
 
         const ecdsa_sig = try self.ecdsa_signer.sign(txn_hash, privkey);
         const r = std.mem.readIntSlice(u256, ecdsa_sig[0..32], std.builtin.Endian.Big);
         const s = std.mem.readIntSlice(u256, ecdsa_sig[32..64], std.builtin.Endian.Big);
         const v = switch (txn) {
-            Txn.LegacyTxn => 35 + 2 * self.chain_id + ecdsa_sig[64], // We sign using EIP155 since 2016.
-        };
+            Txn.LegacyTxn => 35 + 2 * self.chain_id, // We sign using EIP155 since 2016.
+            Txn.FeeMarketTxn => 0,
+        } + ecdsa_sig[64];
         return .{ .r = r, .s = s, .v = v };
     }
 
-    pub fn get_sender(self: TxnSigner, allocator: Allocator, txn: Txn) !Address {
-        const txn_hash = try self.hashTxn(allocator, txn);
+    pub fn get_sender(self: TxnSigner, allocator: Allocator, tx: Txn) !Address {
+        const txn_hash = try self.hashTxn(allocator, tx);
 
-        const txn_sig = txn.getSignature();
         var sig: ecdsa.Signature = undefined;
-        std.mem.writeIntSlice(u256, sig[0..32], txn_sig.r, std.builtin.Endian.Big);
-        std.mem.writeIntSlice(u256, sig[32..64], txn_sig.s, std.builtin.Endian.Big);
 
         // TODO: solve malleability problem.
-        sig[64] = switch (txn) {
-            Txn.LegacyTxn => blk: {
-                if (txn_sig.v == 27 or txn_sig.v == 28) {
-                    break :blk @intCast(txn_sig.v - 27);
+        sig[64] = switch (tx) {
+            Txn.LegacyTxn => |txn| blk: {
+                std.mem.writeIntSlice(u256, sig[0..32], txn.r, std.builtin.Endian.Big);
+                std.mem.writeIntSlice(u256, sig[32..64], txn.s, std.builtin.Endian.Big);
+
+                if (txn.v == 27 or txn.v == 28) {
+                    break :blk @intCast(txn.v - 27);
                 }
                 const v_eip155 = 35 + 2 * self.chain_id;
-                if (txn_sig.v != v_eip155 and txn_sig.v != v_eip155 + 1) {
+                if (txn.v != v_eip155 and txn.v != v_eip155 + 1) {
                     return error.EIP155_v;
                 }
-                break :blk @intCast(txn_sig.v - v_eip155);
+                break :blk @intCast(txn.v - v_eip155);
+            },
+            Txn.FeeMarketTxn => |txn| blk: {
+                std.mem.writeIntSlice(u256, sig[0..32], txn.r, std.builtin.Endian.Big);
+                std.mem.writeIntSlice(u256, sig[32..64], txn.s, std.builtin.Endian.Big);
+                break :blk @intCast(txn.y_parity);
             },
         };
 
@@ -92,6 +98,35 @@ pub const TxnSigner = struct {
                 }, &out);
 
                 break :blk hasher.keccak256(out.items);
+            },
+            Txn.FeeMarketTxn => |txn| blk: {
+                // Txn encoding using EIP-155 (since ~Nov 2016).
+                const feeMarketRLP = struct {
+                    chain_id: u64,
+                    nonce: u256,
+                    max_priority_fee_per_gas: u64,
+                    max_fee_per_gas: u64,
+                    gas: u64,
+                    to: ?Address,
+                    value: u256,
+                    data: []const u8,
+                    access_list: []AccessListTuple,
+                };
+
+                var out = std.ArrayList(u8).init(allocator);
+                defer out.deinit();
+                try rlp.serialize(feeMarketRLP, allocator, .{
+                    .chain_id = txn.chain_id,
+                    .nonce = txn.nonce,
+                    .max_priority_fee_per_gas = txn.max_priority_fee_per_gas,
+                    .max_fee_per_gas = txn.max_fee_per_gas,
+                    .gas = txn.gas,
+                    .to = txn.to,
+                    .value = txn.value,
+                    .data = txn.data,
+                    .access_list = txn.access_list,
+                }, &out);
+                break :blk hasher.keccak256WithPrefix(&[_]u8{@intFromEnum(Txn.FeeMarketTxn)}, out.items);
             },
         };
     }

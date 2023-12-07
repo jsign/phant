@@ -19,7 +19,7 @@ pub const empty_uncle_hash = @import("block.zig").empty_uncle_hash;
 
 // Transactions
 const transaction = @import("transaction.zig");
-pub const SignatureValues = transaction.SignatureValues;
+pub const AccessListTuple = transaction.AccessListTuple;
 pub const Txn = transaction.Txn;
 pub const TxnTypes = transaction.TxnTypes;
 pub const LegacyTxn = transaction.LegacyTxn;
