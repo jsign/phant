@@ -50,7 +50,6 @@ jobs:
     - name: Run
       run: zig build run
 
-
   build-aarch64:
     runs-on: self-hosted
     steps:
