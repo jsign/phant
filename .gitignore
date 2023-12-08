@@ -16,3 +16,7 @@ zig-out/
 /build/
 /build-*/
 /docgen_tmp/
+/ethash/
+/intx/
+/evmone/
+/lib/evmone/
