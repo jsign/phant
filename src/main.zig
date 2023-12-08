@@ -8,10 +8,50 @@ const StateDB = @import("vm/statedb.zig");
 const Block = types.Block;
 const Transaction = types.Transaction;
 const TxnSigner = @import("signer/signer.zig").TxnSigner;
+const zap = @import("zap");
+const engine_api = @import("engine_api/engine_api.zig");
+const json = std.json;
+
+var allocator: std.mem.Allocator = undefined;
+
+fn engineAPIHandler(r: zap.SimpleRequest) void {
+    if (r.body == null) {
+        r.setStatus(.bad_request);
+        return;
+    }
+    const payload = json.parseFromSlice(engine_api.EngineAPIRequest, allocator, r.body.?, .{ .ignore_unknown_fields = true }) catch |err| {
+        std.log.err("error parsing json: {} (body={s})", .{ err, r.body.? });
+        r.setStatus(.bad_request);
+        return;
+    };
+    defer payload.deinit();
+
+    if (std.mem.eql(u8, payload.value.method, "engine_newPayloadV2")) {
+        const execution_payload_json = payload.value.params[0];
+        var execution_payload = execution_payload_json.to_execution_payload(allocator) catch |err| {
+            std.log.warn("error parsing execution payload: {}", .{err});
+            r.setStatus(.bad_request);
+            return;
+        };
+        engine_api.execution_payload.newPayloadV2Handler(&execution_payload, allocator) catch |err| {
+            std.log.err("error handling newPayloadV2: {}", .{err});
+            r.setStatus(.internal_server_error);
+            return;
+        };
+        r.setStatus(.ok);
+    } else {
+        r.setStatus(.internal_server_error);
+    }
+    r.setContentType(.JSON) catch |err| {
+        std.log.err("error setting content type: {}", .{err});
+        r.setStatus(.internal_server_error);
+        return;
+    };
+}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    allocator = gpa.allocator();
 
     std.log.info("Welcome to phant! 🐘", .{});
     const txn_signer = try TxnSigner.init();
@@ -35,6 +75,9 @@ pub fn main() !void {
             .mix_hash = 0,
             .nonce = [_]u8{0} ** 8,
             .base_fee_per_gas = 10,
+            .withdrawals_root = null,
+            .blob_gas_used = null,
+            .excess_blob_gas = null,
         },
     };
 
@@ -81,6 +124,18 @@ pub fn main() !void {
         std.log.err("error executing transaction: {}", .{err});
         return;
     };
+
+    var listener = zap.SimpleHttpListener.init(.{
+        .port = 8551,
+        .on_request = engineAPIHandler,
+        .log = true,
+    });
+    try listener.listen();
+    std.log.info("Listening on 8551", .{});
+    zap.start(.{
+        .threads = 1,
+        .workers = 1,
+    });
 }
 
 test "tests" {
@@ -91,4 +146,5 @@ test "tests" {
     _ = @import("types/types.zig");
     _ = @import("vm/vm.zig");
     _ = @import("crypto/ecdsa.zig");
+    _ = @import("engine_api/engine_api.zig");
 }

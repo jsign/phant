@@ -19,6 +19,8 @@ pub const Block = struct {
     }
 };
 
+pub const empty_uncle_hash: types.Hash32 = [_]u8{ 29, 204, 77, 232, 222, 199, 93, 122, 171, 133, 181, 103, 182, 204, 212, 26, 211, 18, 69, 27, 148, 138, 116, 19, 240, 161, 66, 253, 64, 212, 147, 71 };
+
 pub const Header = struct {
     parent_hash: types.Hash32,
     uncle_hash: types.Hash32,
@@ -35,53 +37,60 @@ pub const Header = struct {
     extra_data: []const u8,
     mix_hash: u256,
     nonce: [8]u8,
-    base_fee_per_gas: u256,
+    base_fee_per_gas: ?u256,
+    withdrawals_root: ?types.Hash32,
+    blob_gas_used: ?u64,
+    excess_blob_gas: ?u64,
 };
 
-var test_allocator = std.testing.allocator;
-test "decode vkt block sample" {
-    const block = try Block.init(@embedFile("testdata/block2.rlp"));
-    try std.testing.expectEqualStrings(
-        "904e3f9205902a780563d861aaa9cd1d635597ad1893a92d7f83dc5fb51b6eb4",
-        &bytesToHex(block.header.parent_hash),
-    );
-    try std.testing.expectEqualStrings(
-        "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
-        &bytesToHex(block.header.uncle_hash),
-    );
-    try std.testing.expectEqualStrings(
-        "0000000000000000000000000000000000000000",
-        &bytesToHex(block.header.fee_recipient),
-    );
-    try std.testing.expectEqualStrings(
-        "350f40f771a73cd6bda4c37283b88c771179469b07633568b6047cf649b8c7d1",
-        &bytesToHex(block.header.state_root),
-    );
-    try std.testing.expectEqualStrings(
-        "5f25ec3493913aef80e3d1d99e653321be3db3b16c3c83b82e6081cdce66a55c",
-        &bytesToHex(block.header.transactions_root),
-    );
-    try std.testing.expectEqualStrings(
-        "8d7a148023d3a4612e85b2f142dcec65c358ab7fbd3aebdfef6868c018d44e3c",
-        &bytesToHex(block.header.receipts_root),
-    );
-    try std.testing.expectEqualStrings(
-        "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-        &bytesToHex(block.header.logs_bloom),
-    );
-    try std.testing.expectEqualStrings(
-        "0200000000000000000000000000000000000000000000000000000000000000",
-        &bytesToHex(block.header.prev_randao),
-    );
-    try std.testing.expectEqual(@as(i64, 2), block.header.block_number);
-    try std.testing.expectEqual(@as(i64, 0x47e7c4), block.header.gas_limit);
-    try std.testing.expectEqual(@as(u64, 0x05802b), block.header.gas_used);
-    try std.testing.expectEqual(@as(i64, 0x14), block.header.timestamp);
-    try std.testing.expect(block.header.extra_data.len == 0);
-    try std.testing.expectEqual(@as(u256, 0), block.header.mix_hash);
-    try std.testing.expectEqual(@as(u256, 0x2de81128), block.header.base_fee_per_gas);
-}
+// NOTE: this test uses a bock from an old, pre-shanghai testnet.
+// I have deactivated it and will replace it with a kaustinen
+// block when I publish my progress with zig-verkle.
+// var test_allocator = std.testing.allocator;
 
-fn bytesToHex(bytes: anytype) [bytes.len * 2]u8 {
-    return std.fmt.bytesToHex(bytes, std.fmt.Case.lower);
-}
+// test "decode vkt block sample" {
+//     const block = try Block.init(@embedFile("testdata/block2.rlp"));
+//     try std.testing.expectEqualStrings(
+//         "904e3f9205902a780563d861aaa9cd1d635597ad1893a92d7f83dc5fb51b6eb4",
+//         &bytesToHex(block.header.parent_hash),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+//         &bytesToHex(block.header.uncle_hash),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "0000000000000000000000000000000000000000",
+//         &bytesToHex(block.header.fee_recipient),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "350f40f771a73cd6bda4c37283b88c771179469b07633568b6047cf649b8c7d1",
+//         &bytesToHex(block.header.state_root),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "5f25ec3493913aef80e3d1d99e653321be3db3b16c3c83b82e6081cdce66a55c",
+//         &bytesToHex(block.header.transactions_root),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "8d7a148023d3a4612e85b2f142dcec65c358ab7fbd3aebdfef6868c018d44e3c",
+//         &bytesToHex(block.header.receipts_root),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+//         &bytesToHex(block.header.logs_bloom),
+//     );
+//     try std.testing.expectEqualStrings(
+//         "0200000000000000000000000000000000000000000000000000000000000000",
+//         &bytesToHex(block.header.prev_randao),
+//     );
+//     try std.testing.expectEqual(@as(i64, 2), block.header.block_number);
+//     try std.testing.expectEqual(@as(i64, 0x47e7c4), block.header.gas_limit);
+//     try std.testing.expectEqual(@as(u64, 0x05802b), block.header.gas_used);
+//     try std.testing.expectEqual(@as(i64, 0x14), block.header.timestamp);
+//     try std.testing.expect(block.header.extra_data.len == 0);
+//     try std.testing.expectEqual(@as(u256, 0), block.header.mix_hash);
+//     try std.testing.expectEqual(@as(u256, 0x2de81128), block.header.base_fee_per_gas.?);
+// }
+
+// fn bytesToHex(bytes: anytype) [bytes.len * 2]u8 {
+//     return std.fmt.bytesToHex(bytes, std.fmt.Case.lower);
+// }
