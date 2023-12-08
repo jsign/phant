@@ -199,8 +199,7 @@ pub const AccessListTxn = struct {
         self.*.s = s;
     }
 
-    // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
-    // output transaction.
+    // decode decodes a transaction from bytes.
     pub fn decode(bytes: []const u8) !AccessListTxn {
         return try RLPDecode(AccessListTxn, bytes);
     }
@@ -233,8 +232,7 @@ pub const FeeMarketTxn = struct {
         self.*.s = s;
     }
 
-    // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
-    // output transaction.
+    // decode decodes a transaction from bytes.
     pub fn decode(bytes: []const u8) !FeeMarketTxn {
         return try RLPDecode(FeeMarketTxn, bytes);
     }
