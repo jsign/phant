@@ -9,50 +9,25 @@ const StateDB = @import("vm/statedb.zig");
 const Block = types.Block;
 const Txn = types.Txn;
 const TxnSigner = @import("signer/signer.zig").TxnSigner;
-const zap = @import("zap");
+const httpz = @import("httpz");
 const engine_api = @import("engine_api/engine_api.zig");
 const json = std.json;
 
-var allocator: std.mem.Allocator = undefined;
-
-fn engineAPIHandler(r: zap.SimpleRequest) void {
-    if (r.body == null) {
-        r.setStatus(.bad_request);
-        return;
+fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
+    if (try req.json(engine_api.EngineAPIRequest)) |payload| {
+        if (std.mem.eql(u8, payload.method, "engine_newPayloadV2")) {
+            const execution_payload_json = payload.params[0];
+            var execution_payload = try execution_payload_json.to_execution_payload(res.arena);
+            try engine_api.execution_payload.newPayloadV2Handler(&execution_payload, res.arena);
+        } else {
+            res.status = 500;
+        }
     }
-    const payload = json.parseFromSlice(engine_api.EngineAPIRequest, allocator, r.body.?, .{ .ignore_unknown_fields = true }) catch |err| {
-        std.log.err("error parsing json: {} (body={s})", .{ err, r.body.? });
-        r.setStatus(.bad_request);
-        return;
-    };
-    defer payload.deinit();
-
-    if (std.mem.eql(u8, payload.value.method, "engine_newPayloadV2")) {
-        const execution_payload_json = payload.value.params[0];
-        var execution_payload = execution_payload_json.to_execution_payload(allocator) catch |err| {
-            std.log.warn("error parsing execution payload: {}", .{err});
-            r.setStatus(.bad_request);
-            return;
-        };
-        engine_api.execution_payload.newPayloadV2Handler(&execution_payload, allocator) catch |err| {
-            std.log.err("error handling newPayloadV2: {}", .{err});
-            r.setStatus(.internal_server_error);
-            return;
-        };
-        r.setStatus(.ok);
-    } else {
-        r.setStatus(.internal_server_error);
-    }
-    r.setContentType(.JSON) catch |err| {
-        std.log.err("error setting content type: {}", .{err});
-        r.setStatus(.internal_server_error);
-        return;
-    };
 }
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    allocator = gpa.allocator();
+    var allocator = gpa.allocator();
 
     std.log.info("Welcome to phant! 🐘", .{});
     const txn_signer = try TxnSigner.init(@intFromEnum(config.ChainId.Mainnet));
@@ -112,17 +87,13 @@ pub fn main() !void {
         return;
     };
 
-    var listener = zap.SimpleHttpListener.init(.{
+    var engine_api_server = try httpz.Server().init(allocator, .{
         .port = 8551,
-        .on_request = engineAPIHandler,
-        .log = true,
-    });
-    try listener.listen();
     std.log.info("Listening on 8551", .{});
-    zap.start(.{
-        .threads = 1,
-        .workers = 1,
     });
+    var router = engine_api_server.router();
+    router.post("/", engineAPIHandler);
+    try engine_api_server.listen();
 }
 
 test "tests" {
