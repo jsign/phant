@@ -89,10 +89,10 @@ pub fn main() !void {
 
     var engine_api_server = try httpz.Server().init(allocator, .{
         .port = 8551,
-    std.log.info("Listening on 8551", .{});
     });
     var router = engine_api_server.router();
     router.post("/", engineAPIHandler);
+    std.log.info("Listening on 8551", .{});
     try engine_api_server.listen();
 }
 
