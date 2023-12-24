@@ -11,7 +11,7 @@
             .hash = "1220fcf062f8ee89b343e1588ac3cc002f37ee3f72841dd7f9493d9c09acad7915a3",
         },
         .httpz = .{
-            .url = "https://github.com/karlseguin/http.zig/archive/refs/heads/master.tar.gz",
+            .url = "https://github.com/karlseguin/http.zig/archive/1a82beb0dfc22e6fc38e9918e323f8fbd3cb78a3.tar.gz",
             .hash = "122020cbd399273b1220f11c4b2d734b86c94cc5f1c2d6d90fc766580bc0e25b0dfb",
         }
     },
