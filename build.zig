@@ -19,11 +19,11 @@ pub fn build(b: *std.Build) void {
     const mod_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize }).module("rlp");
     const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
-    const zap = b.dependency("zap", .{
+    const httpz = b.dependency("httpz", .{
         .target = target,
         .optimize = optimize,
     });
-    const mod_zap = zap.module("zap");
+    const mod_httpz = httpz.module("httpz");
 
     const ethash = b.addStaticLibrary(.{
         .name = "ethash",
@@ -105,8 +105,7 @@ pub fn build(b: *std.Build) void {
     exe.addModule("zig-rlp", mod_rlp);
     exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
     exe.addModule("zig-eth-secp256k1", mod_secp256k1);
-    exe.addModule("zap", mod_zap);
-    exe.linkLibrary(zap.artifact("facil.io"));
+    exe.addModule("httpz", mod_httpz);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
