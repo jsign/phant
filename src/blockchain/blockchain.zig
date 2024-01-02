@@ -44,6 +44,8 @@ pub const Blockchain = struct {
         // TODO: continue
     }
 
+    // validateBlockHeader validates the header of a block itself and with respect with the parent.
+    // If isn't valid, it returns an error.
     fn validateBlockHeader(allocator: Allocator, prev_block: BlockHeader, curr_block: BlockHeader) !void {
         try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
         if (curr_block.gas_used > curr_block.gas_limit)

@@ -31,11 +31,11 @@ const TxnContext = struct {
 
 const BlockContext = struct {
     coinbase: Address,
-    number: i64,
-    timestamp: i64,
-    gas_limit: i64,
+    number: u64,
+    timestamp: u64,
+    gas_limit: u64,
     prev_randao: u256,
-    base_fee: ?u256,
+    base_fee: u256,
 };
 
 pub const VM = struct {
@@ -210,12 +210,12 @@ pub const VM = struct {
             .tx_gas_price = util.to_evmc_bytes32(vm.context.?.txn.gas_price),
             .tx_origin = util.to_evmc_address(vm.context.?.txn.from),
             .block_coinbase = util.to_evmc_address(vm.context.?.block.coinbase),
-            .block_number = vm.context.?.block.number,
-            .block_timestamp = vm.context.?.block.timestamp,
-            .block_gas_limit = vm.context.?.block.gas_limit,
+            .block_number = @intCast(vm.context.?.block.number),
+            .block_timestamp = @intCast(vm.context.?.block.timestamp),
+            .block_gas_limit = @intCast(vm.context.?.block.gas_limit),
             .block_prev_randao = util.to_evmc_bytes32(vm.context.?.block.prev_randao),
             .chain_id = util.to_evmc_bytes32(vm.context.?.txn.chain_id),
-            .block_base_fee = util.to_evmc_bytes32(vm.context.?.block.base_fee.?),
+            .block_base_fee = util.to_evmc_bytes32(vm.context.?.block.base_fee),
         };
     }
 

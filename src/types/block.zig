@@ -1,6 +1,9 @@
 const std = @import("std");
 const rlp = @import("zig-rlp");
 const types = @import("types.zig");
+const Hash32 = types.Hash32;
+const Bytes32 = types.Bytes32;
+const Address = types.Address;
 const Transaction = types.Transaction;
 
 const BYTES_PER_LOGS_BLOOM = 256;
@@ -22,23 +25,23 @@ pub const Block = struct {
 pub const empty_uncle_hash: types.Hash32 = [_]u8{ 29, 204, 77, 232, 222, 199, 93, 122, 171, 133, 181, 103, 182, 204, 212, 26, 211, 18, 69, 27, 148, 138, 116, 19, 240, 161, 66, 253, 64, 212, 147, 71 };
 
 pub const BlockHeader = struct {
-    parent_hash: types.Hash32,
-    uncle_hash: types.Hash32,
-    fee_recipient: types.Address,
-    state_root: types.Bytes32,
-    transactions_root: types.Bytes32,
-    receipts_root: types.Bytes32,
+    parent_hash: Hash32,
+    uncle_hash: Hash32,
+    fee_recipient: Address,
+    state_root: Bytes32,
+    transactions_root: Bytes32,
+    receipts_root: Bytes32,
     logs_bloom: [BYTES_PER_LOGS_BLOOM]u8,
-    prev_randao: types.Bytes32,
-    block_number: i64,
-    gas_limit: i64,
+    difficulty: u8,
+    block_number: u64,
+    gas_limit: u64,
     gas_used: u64,
-    timestamp: i64,
+    timestamp: u64,
     extra_data: []const u8,
-    mix_hash: u256,
+    prev_randao: Bytes32,
     nonce: [8]u8,
-    base_fee_per_gas: ?u256,
-    withdrawals_root: ?types.Hash32,
+    base_fee_per_gas: u256,
+    withdrawals_root: ?Hash32,
     blob_gas_used: ?u64,
     excess_blob_gas: ?u64,
 };
