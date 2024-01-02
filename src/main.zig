@@ -33,7 +33,7 @@ pub fn main() !void {
     const txn_signer = try TxnSigner.init(@intFromEnum(config.ChainId.Mainnet));
 
     // Create block.
-    const block = Block{
+    const block: Block = .{
         .header = .{
             .parent_hash = [_]u8{0} ** 32,
             .uncle_hash = [_]u8{0} ** 32,
@@ -48,13 +48,16 @@ pub fn main() !void {
             .gas_used = 0,
             .timestamp = 0,
             .extra_data = &[_]u8{},
-            .mix_hash = 0,
             .nonce = [_]u8{0} ** 8,
             .base_fee_per_gas = 10,
             .withdrawals_root = null,
             .blob_gas_used = null,
             .excess_blob_gas = null,
+            .difficulty = 0,
         },
+        .transactions = &[_]Txn{},
+        .uncles = &[_]types.BlockHeader{},
+        .withdrawals = &[_]types.Withdrawal{},
     };
 
     // Create some dummy transaction.

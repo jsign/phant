@@ -18,8 +18,19 @@ const Address = types.Address;
 pub const Blockchain = struct {
     const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8;
     const ELASTICITY_MULTIPLIER = 2;
+
     const GAS_LIMIT_ADJUSTMENT_FACTOR = 1024;
     const GAS_LIMIT_MINIMUM = 5000;
+    const GAS_INIT_CODE_WORD_COST = 2;
+
+    const MAX_CODE_SIZE = 0x6000;
+
+    const TX_BASE_COST = 21000;
+    const TX_DATA_COST_PER_ZERO = 4;
+    const TX_DATA_COST_PER_NON_ZERO = 16;
+    const TX_CREATE_COST = 32000;
+    const TX_ACCESS_LIST_ADDRESS_COST = 2400;
+    const TX_ACCESS_LIST_STORAGE_KEY_COST = 1900;
 
     allocator: Allocator,
     chain_id: config.ChainId,
@@ -136,7 +147,6 @@ pub const Blockchain = struct {
             // TODO: add tx to txs tree.
 
             const txn_info = checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
-            _ = txn_info;
             const env = vm.Environment{
                 .caller = txn_info.sender_address,
                 .origin = txn_info.sender_address,
@@ -148,7 +158,7 @@ pub const Blockchain = struct {
                 .gas_price = txn_info.effective_gas_price,
                 .time = block.header.timestamp,
                 .prev_randao = block.header.prev_randao,
-                .state = state,
+                .state = std.mem.zeroes(State), // TODO ##########
                 .chain_id = chain.chain_id,
             };
 
@@ -200,6 +210,8 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
+    const State = struct {};
+
     const Environment = struct {
         caller: Address,
         block_hashes: [256]Hash32,
@@ -214,4 +226,46 @@ pub const Blockchain = struct {
         state: *State,
         chain_id: config.ChainId,
     };
+
+    fn processTransaction(env: Environment, tx: transaction.Txn) !struct { gas_left: u64 } {
+        _ = tx;
+        _ = env;
+    }
+
+    fn validateTransaction(tx: transaction.Txn) bool {
+        if (calculateIntrinsicCost(tx) > tx.getGasLimit())
+            return false;
+        if (tx.getNonce() >= (2 << 64) - 1)
+            return false;
+        if (tx.getTo() == null and tx.data.len > 2 * MAX_CODE_SIZE)
+            return false;
+        return true;
+    }
+
+    fn calculateIntrinsicCost(tx: transaction.Txn) u64 {
+        var data_cost: u64 = 0;
+        for (tx.data) |byte| {
+            data_cost += if (byte == 0) TX_DATA_COST_PER_ZERO else TX_DATA_COST_PER_NON_ZERO;
+        }
+
+        const create_cost = if (tx.to == null) TX_CREATE_COST + initCodeCost(tx.data.len) else 0;
+
+        const access_list_cost = switch (tx) {
+            .LegacyTxn => 0,
+            inline else => |al_tx| blk: {
+                var sum: u64 = 0;
+                for (al_tx.access_list) |al| {
+                    data_cost += TX_ACCESS_LIST_ADDRESS_COST;
+                    data_cost += al.storage_keys.len * TX_ACCESS_LIST_STORAGE_KEY_COST;
+                }
+                break :blk sum;
+            },
+        };
+
+        return TX_BASE_COST + data_cost + create_cost + access_list_cost;
+    }
+
+    fn initCodeCost(code_length: usize) u64 {
+        return GAS_INIT_CODE_WORD_COST * @ceil(code_length / 32);
+    }
 };

@@ -170,7 +170,7 @@ pub const LegacyTxn = struct {
 
 pub const AccessListTuple = struct {
     address: Address,
-    StorageKeys: []Hash32,
+    storage_keys: []Hash32,
 };
 
 pub const AccessListTxn = struct {
