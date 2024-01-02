@@ -11,10 +11,11 @@ pub const Address = [20]u8;
 pub const AccountState = @import("account_state.zig");
 
 // Blocks
-pub const Block = @import("block.zig").Block;
-pub const BlockHeader = @import("block.zig").Header;
+pub const block = @import("block.zig");
+pub const Block = block.Block;
+pub const BlockHeader = block.BlockHeader;
+pub const empty_uncle_hash = block.empty_uncle_hash;
 pub const Withdrawal = @import("withdrawal.zig");
-pub const empty_uncle_hash = @import("block.zig").empty_uncle_hash;
 
 // Transactions
 const transaction = @import("transaction.zig");

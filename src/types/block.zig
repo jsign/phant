@@ -19,13 +19,9 @@ pub const Block = struct {
     }
 };
 
-<<<<<<< HEAD
 pub const empty_uncle_hash: types.Hash32 = [_]u8{ 29, 204, 77, 232, 222, 199, 93, 122, 171, 133, 181, 103, 182, 204, 212, 26, 211, 18, 69, 27, 148, 138, 116, 19, 240, 161, 66, 253, 64, 212, 147, 71 };
 
-pub const Header = struct {
-=======
 pub const BlockHeader = struct {
->>>>>>> ae21c3d... blockchain: add Blockchain abstraction and start making block validations
     parent_hash: types.Hash32,
     uncle_hash: types.Hash32,
     fee_recipient: types.Address,
