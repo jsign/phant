@@ -26,7 +26,7 @@ pub fn init(allocator: Allocator, accounts_state: []AccountState) !StateDB {
     };
 }
 
-pub fn get(self: *StateDB, addr: Address) !*AccountState {
+pub fn getAccount(self: *StateDB, addr: Address) !*AccountState {
     var res = try self.db.getOrPut(addr);
     if (res.found_existing) {
         return res.value_ptr;
@@ -36,31 +36,22 @@ pub fn get(self: *StateDB, addr: Address) !*AccountState {
     return res.value_ptr;
 }
 
-pub fn set_storage(self: *StateDB, addr: Address, key: u256, value: u256) !void {
-    var account = try self.get(addr);
+pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: u256) !void {
+    var account = try self.getAccount(addr);
     try account.storage.put(key, value);
 }
 
-pub fn add_balance(self: *StateDB, addr: Address, amount: u256) !void {
-    var account = try self.get(addr);
-    account.balance += amount;
+pub fn setBalance(self: *StateDB, addr: Address, balance: u256) !void {
+    var account = try self.getAccount(addr);
+    account.balance = balance;
 }
 
-pub fn sub_balance(self: *StateDB, addr: Address, amount: u256) !void {
-    var account = try self.get(addr);
-    account.balance -= amount;
+pub fn incrementNonce(self: *StateDB, addr: Address) !void {
+    var account = try self.getAccount(addr);
+    account.nonce += 1;
 }
 
-pub fn set_nonce(self: *StateDB, addr: Address, nonce: u256) !void {
-    var account = try self.get(addr);
-
-    if (nonce != account.nonce + 1) {
-        return error.InvalidNonce;
-    }
-    account.nonce = nonce;
-}
-
-pub fn get_code(self: *StateDB, addr: Address) ![]const u8 {
+pub fn getCode(self: *StateDB, addr: Address) ![]const u8 {
     var account = try self.get(addr);
     return account.code;
 }

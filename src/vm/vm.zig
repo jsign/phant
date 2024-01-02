@@ -136,7 +136,7 @@ pub const VM = struct {
         if (txn.getNonce() +% 1 < txn.getNonce()) {
             return error.MaxNonce;
         }
-        try self.statedb.*.set_nonce(from_addr, txn.getNonce() + 1);
+        try self.statedb.incrementNonce(from_addr);
 
         // Charge intrinsic gas costs.
         // TODO(jsign): this is incomplete.
@@ -147,7 +147,7 @@ pub const VM = struct {
 
             // Send transaction value to the recipient.
             if (txn.getValue() > 0) { // TODO(jsign): incomplete
-                try self.statedb.add_balance(to_addr, txn.getValue());
+                try self.statedb.setBalance(to_addr, txn.getValue()); // TODO: TEMP wrong
             }
 
             self.context.?.execution = ExecutionContext{
@@ -187,11 +187,11 @@ pub const VM = struct {
         // Coinbase rewards.
         const gas_tip = 0xa - 0x7; // TODO(jsign): fix, pull from tx_context.
         const coinbase_fee = gas_used * gas_tip;
-        try self.statedb.add_balance(self.context.?.block.coinbase, @as(u256, @intCast(coinbase_fee)));
+        try self.statedb.setBalance(self.context.?.block.coinbase, @as(u256, @intCast(coinbase_fee))); // TODO TEMP WRONG
 
         // Sender fees.
         const sender_fee = gas_used * 0xa;
-        try self.statedb.sub_balance(from_addr, @as(u256, @intCast(sender_fee)));
+        try self.statedb.setBalance(from_addr, @as(u256, @intCast(sender_fee))); // TODO TEMP WRONG
     }
 
     inline fn charge_gas(remaining_gas: *i64, charge: u64) !void {
@@ -258,7 +258,7 @@ pub const VM = struct {
         const skey = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
         const svalue = std.mem.readIntSlice(u256, &value.*.bytes, std.builtin.Endian.Big);
 
-        vm.statedb.set_storage(addr.*.bytes, skey, svalue) catch unreachable; // TODO(jsign): manage catch.
+        vm.statedb.setStorage(addr.*.bytes, skey, svalue) catch unreachable; // TODO(jsign): manage catch.
 
         return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix
     }
@@ -375,7 +375,7 @@ pub const VM = struct {
         ); // TODO(jsign): explore creating custom formatter?
 
         // Check if the target address is a contract, and do the appropiate call.
-        const recipient_account = vm.statedb.get(util.from_evmc_address(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
+        const recipient_account = vm.statedb.getAccount(util.from_evmc_address(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
         if (recipient_account.code.len != 0) {
             log.debug("contract call, codelen={d}", .{recipient_account.code.len});
             // Persist the current context. We'll restore it after the call returns.

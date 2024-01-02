@@ -34,21 +34,21 @@ pub const Blockchain = struct {
 
     allocator: Allocator,
     chain_id: config.ChainId,
-    flat_db: *StateDB,
+    state: *StateDB,
     last_256_blocks_hashes: [256]Hash32,
     previous_block: Block,
 
     pub fn init(
         allocator: Allocator,
         chain_id: config.ChainId,
-        flat_db: *StateDB,
+        state: *StateDB,
         prev_block_header: BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
     ) void {
         return Blockchain{
             .allocator = allocator,
             .chain_id = chain_id,
-            .flat_db = flat_db,
+            .state = state,
             .prev_block_header = prev_block_header,
             .last_256_blocks_hashes = last_256_blocks_hashes,
         };
@@ -63,7 +63,7 @@ pub const Blockchain = struct {
         defer arena.deinit();
 
         // Execute block.
-        var result = try applyBody(arena, self, block);
+        var result = try applyBody(arena, self, block, self.state);
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used)
@@ -141,7 +141,7 @@ pub const Blockchain = struct {
         withdrawals_root: Hash32,
     };
 
-    fn applyBody(allocator: Allocator, chain: Blockchain, block: Block) !BlockExecutionResult {
+    fn applyBody(allocator: Allocator, chain: Blockchain, state: StateDB, block: Block) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
             // TODO: add tx to txs tree.
@@ -158,7 +158,7 @@ pub const Blockchain = struct {
                 .gas_price = txn_info.effective_gas_price,
                 .time = block.header.timestamp,
                 .prev_randao = block.header.prev_randao,
-                .state = std.mem.zeroes(State), // TODO ##########
+                .state = state,
                 .chain_id = chain.chain_id,
             };
 
@@ -210,8 +210,6 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    const State = struct {};
-
     const Environment = struct {
         caller: Address,
         block_hashes: [256]Hash32,
@@ -223,13 +221,33 @@ pub const Blockchain = struct {
         gas_price: u64,
         time: u256,
         prev_randao: Bytes32,
-        state: *State,
+        state: *StateDB,
         chain_id: config.ChainId,
     };
 
     fn processTransaction(env: Environment, tx: transaction.Txn) !struct { gas_left: u64 } {
-        _ = tx;
-        _ = env;
+        if (!validateTransaction(tx))
+            return error.InvalidTransaction;
+
+        const sender = env.origin;
+        const sender_account = try env.state.getAccount(sender);
+
+        const gas_fee = tx.getGasLimit() * tx.getGasPrice();
+
+        if (sender_account.nonce != tx.nonce)
+            return error.InvalidTxnNonce;
+        if (sender_account.balance < gas_fee + tx.value)
+            return error.NotEnoughBalance;
+        if (sender_account.code != null)
+            return error.SenderIsNotEOA;
+
+        const effective_gas_fee = tx.getGasLimit() * env.gas_price;
+        const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
+        env.state.incrementNonce(sender);
+        _ = gas;
+
+        const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
+        env.state.setBalance(sender, sender_balance_after_gas_fee);
     }
 
     fn validateTransaction(tx: transaction.Txn) bool {

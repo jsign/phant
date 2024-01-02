@@ -94,7 +94,7 @@ pub const FixtureTest = struct {
         while (it.next()) |entry| {
             var exp_account_state: AccountState = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
             std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
-            const got_account_state = try db.get(exp_account_state.addr);
+            const got_account_state = try db.getAccount(exp_account_state.addr);
             if (!std.mem.eql(u8, &got_account_state.addr, &exp_account_state.addr)) {
                 return error.post_state_addr_mismatch;
             }
