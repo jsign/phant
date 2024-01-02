@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
+const block = @import("../types/block.zig");
 const config = @import("../config/config.zig");
 const transaction = @import("../types/transaction.zig");
 const vm = @import("../vm/vm.zig"); // TODO: Avoid this import?
@@ -15,7 +16,6 @@ pub const Blockchain = struct {
     const ELASTICITY_MULTIPLIER = 2;
     const GAS_LIMIT_ADJUSTMENT_FACTOR = 1024;
     const GAS_LIMIT_MINIMUM = 5000;
-    const EMPTY_OMMER_HASH = [_]u8{0} ** 32; // TODO
 
     allocator: Allocator,
     chain_id: config.ChainId,
@@ -78,7 +78,7 @@ pub const Blockchain = struct {
             return error.InvalidDifficulty;
         if (curr_block.nonce == [_]u8{0} ** 8)
             return error.InvalidNonce;
-        if (curr_block.ommers_hash != EMPTY_OMMER_HASH)
+        if (curr_block.ommers_hash != block.empty_uncle_hash)
             return error.InvalidOmmersHash;
 
         const prev_block_hash = transaction.RLPHash(BlockHeader, allocator, prev_block, null);

@@ -1,9 +1,13 @@
 const std = @import("std");
 const fmt = std.fmt;
-const Allocator = std.mem.Allocator;
-pub const execution_payload = @import("./execution_payload.zig");
-const ExecutionPayload = execution_payload.ExecutionPayload;
+const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
+const Allocator = std.mem.Allocator;
+const Withdrawal = types.Withdrawal;
+const Txn = types.Txn;
+const ExecutionPayload = execution_payload.ExecutionPayload;
+
+pub const execution_payload = @import("./execution_payload.zig");
 
 // This is an intermediate structure used to deserialize the hex strings
 // from the JSON request. I have seen some zig libraries that can do this
@@ -30,11 +34,11 @@ const AllPossibleExecutionParams = struct {
     transactions: [][]const u8,
 
     pub fn to_execution_payload(self: *const AllPossibleExecutionParams, allocator: Allocator) !ExecutionPayload {
-        var transactions: [][]const u8 = &[_][]const u8{};
+        var txns: []Txn = &[0]Txn{};
         if (self.transactions.len > 0) {
-            transactions = try allocator.alloc([]const u8, self.transactions.len);
-            for (self.transactions, 0..) |tx, txidx| {
-                transactions[txidx] = try common.prefixedhex2byteslice(allocator, tx);
+            txns = try allocator.alloc(Txn, self.transactions.len);
+            for (self.transactions, 0..) |tx, i| {
+                txns[i] = try Txn.decode(tx);
             }
         }
 
@@ -52,8 +56,8 @@ const AllPossibleExecutionParams = struct {
             .gasUsed = try common.prefixedhex2u64(self.gasUsed),
             .timestamp = try common.prefixedhex2u64(self.timestamp),
             .baseFeePerGas = try common.prefixedhex2u64(self.baseFeePerGas),
-            .transactions = transactions,
-            .withdrawals = null,
+            .transactions = txns,
+            .withdrawals = &[0]Withdrawal{},
             .blobGasUsed = null,
             .excessBlobGas = null,
             .allocator = allocator,

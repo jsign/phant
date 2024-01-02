@@ -1,28 +1,14 @@
 const std = @import("std");
 const rlp = @import("zig-rlp");
 const types = @import("types.zig");
+const Withdrawal = types.Withdrawal;
+const Txn = types.Txn;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
-const Transaction = types.Transaction;
-
-const BYTES_PER_LOGS_BLOOM = 256;
-
-pub const Block = struct {
-    header: BlockHeader,
-    // TODO(jsign): missing fields (i.e: txns).
-
-    // new returns a new Block deserialized from rlp_bytes.
-    // The returned Block has references to the rlp_bytes slice.
-    pub fn init(rlp_bytes: []const u8) !Block {
-        var block = std.mem.zeroes(Block);
-        _ = try rlp.deserialize(Block, rlp_bytes, &block);
-        // TODO: consider strict checking of returned deserialized length vs rlp_bytes.len.
-        return block;
-    }
-};
 
 pub const empty_uncle_hash: types.Hash32 = [_]u8{ 29, 204, 77, 232, 222, 199, 93, 122, 171, 133, 181, 103, 182, 204, 212, 26, 211, 18, 69, 27, 148, 138, 116, 19, 240, 161, 66, 253, 64, 212, 147, 71 };
+const bytes_per_logs_bloom = 256;
 
 pub const BlockHeader = struct {
     parent_hash: Hash32,
@@ -31,7 +17,7 @@ pub const BlockHeader = struct {
     state_root: Bytes32,
     transactions_root: Bytes32,
     receipts_root: Bytes32,
-    logs_bloom: [BYTES_PER_LOGS_BLOOM]u8,
+    logs_bloom: [bytes_per_logs_bloom]u8,
     difficulty: u8,
     block_number: u64,
     gas_limit: u64,
@@ -44,6 +30,22 @@ pub const BlockHeader = struct {
     withdrawals_root: ?Hash32,
     blob_gas_used: ?u64,
     excess_blob_gas: ?u64,
+};
+
+pub const Block = struct {
+    header: BlockHeader,
+    transactions: []Txn,
+    uncles: []BlockHeader,
+    withdrawals: []Withdrawal,
+
+    // new returns a new Block deserialized from rlp_bytes.
+    // The returned Block has references to the rlp_bytes slice.
+    pub fn init(rlp_bytes: []const u8) !Block {
+        var block = std.mem.zeroes(Block);
+        _ = try rlp.deserialize(Block, rlp_bytes, &block);
+        // TODO: consider strict checking of returned deserialized length vs rlp_bytes.len.
+        return block;
+    }
 };
 
 // NOTE: this test uses a bock from an old, pre-shanghai testnet.

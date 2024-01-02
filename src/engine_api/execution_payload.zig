@@ -1,6 +1,9 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
 const Allocator = std.mem.Allocator;
+const BlockHeader = types.BlockHeader;
+const Withdrawal = types.Withdrawal;
+const Txn = types.Txn;
 
 pub const ExecutionPayload = struct {
     parentHash: types.Hash32,
@@ -16,9 +19,9 @@ pub const ExecutionPayload = struct {
     extraData: []const u8,
     baseFeePerGas: u256,
     blockHash: types.Hash32,
-    transactions: [][]const u8,
+    transactions: []Txn,
 
-    withdrawals: ?[]types.Withdrawal,
+    withdrawals: []types.Withdrawal,
     blobGasUsed: ?u64,
     excessBlobGas: ?u64,
     // executionWitness : ?types.ExecutionWitness,
@@ -48,9 +51,9 @@ pub const ExecutionPayload = struct {
                 .withdrawals_root = null,
                 .excess_blob_gas = null,
             },
-            // .blockHash = self.blockHash,
-            // .transactions = self.transactions,
-            // .withdrawals = self.withdrawals,
+            .transactions = self.transactions,
+            .withdrawals = self.withdrawals,
+            .uncles = &[0]BlockHeader{},
         };
     }
 
