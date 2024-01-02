@@ -8,7 +8,7 @@ const Bytes32 = types.Bytes32;
 const Address = types.Address;
 
 pub const empty_uncle_hash: types.Hash32 = [_]u8{ 29, 204, 77, 232, 222, 199, 93, 122, 171, 133, 181, 103, 182, 204, 212, 26, 211, 18, 69, 27, 148, 138, 116, 19, 240, 161, 66, 253, 64, 212, 147, 71 };
-const bytes_per_logs_bloom = 256;
+pub const LogsBloom = [256]u8;
 
 pub const BlockHeader = struct {
     parent_hash: Hash32,
@@ -17,7 +17,7 @@ pub const BlockHeader = struct {
     state_root: Bytes32,
     transactions_root: Bytes32,
     receipts_root: Bytes32,
-    logs_bloom: [bytes_per_logs_bloom]u8,
+    logs_bloom: LogsBloom,
     difficulty: u8,
     block_number: u64,
     gas_limit: u64,

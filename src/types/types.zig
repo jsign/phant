@@ -12,9 +12,10 @@ pub const AccountState = @import("account_state.zig");
 
 // Blocks
 pub const block = @import("block.zig");
+pub const empty_uncle_hash = block.empty_uncle_hash;
 pub const Block = block.Block;
 pub const BlockHeader = block.BlockHeader;
-pub const empty_uncle_hash = block.empty_uncle_hash;
+pub const LogsBloom = block.LogsBloom;
 pub const Withdrawal = @import("withdrawal.zig");
 
 // Transactions
