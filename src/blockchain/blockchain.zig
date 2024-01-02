@@ -12,20 +12,14 @@ const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const StateDB = vm.StateDB;
 const Hash32 = types.Hash32;
+const Bytes32 = types.Bytes32;
+const Address = types.Address;
 
 pub const Blockchain = struct {
     const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8;
     const ELASTICITY_MULTIPLIER = 2;
     const GAS_LIMIT_ADJUSTMENT_FACTOR = 1024;
     const GAS_LIMIT_MINIMUM = 5000;
-
-    const BlockExecutionResult = struct {
-        gas_used: u64,
-        transactions_root: Hash32,
-        receipts_root: Hash32,
-        logs_bloom: LogsBloom,
-        withdrawals_root: Hash32,
-    };
 
     allocator: Allocator,
     chain_id: config.ChainId,
@@ -128,21 +122,63 @@ pub const Blockchain = struct {
         return gas_limit >= GAS_LIMIT_MINIMUM;
     }
 
+    const BlockExecutionResult = struct {
+        gas_used: u64,
+        transactions_root: Hash32,
+        receipts_root: Hash32,
+        logs_bloom: LogsBloom,
+        withdrawals_root: Hash32,
+    };
+
     fn applyBody(allocator: Allocator, chain: Blockchain, block: Block) !BlockExecutionResult {
-        _ = chain;
-        _ = allocator;
-        const gas_available = block.header.gas_limit;
-        _ = gas_available;
+        var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
-            _ = tx;
+            // TODO: add tx to txs tree.
+
+            const txn_info = checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
+            _ = txn_info;
+            const env = vm.Environment{
+                .caller = txn_info.sender_address,
+                .origin = txn_info.sender_address,
+                .block_hashes = chain.last_256_blocks_hashes,
+                .coinbase = block.header.fee_recipient,
+                .number = block.header.block_number,
+                .gas_limit = block.header.gas_limit,
+                .base_fee_per_gas = block.header.base_fee_per_gas,
+                .gas_price = txn_info.effective_gas_price,
+                .time = block.header.timestamp,
+                .prev_randao = block.header.prev_randao,
+                .state = state,
+                .chain_id = chain.chain_id,
+            };
+
+            const exec_tx_result = try processTransaction(allocator, env, tx);
+            gas_available -= exec_tx_result.gas_used;
+
+            // TODO: make receipt and add to receipt tree.
+            // TODO: do tx logs aggregation.
         }
+
+        const block_gas_used = block.header.gas_limit - gas_available;
+
+        // TODO: logs bloom calculation.
+
+        // TODO: process withdrawals.
+
+        return .{
+            .gas_used = block_gas_used,
+            .transactions_root = std.mem.zeroes(Hash32), // TODO
+            .receipts_root = std.mem.zeroes(Hash32), // TODO
+            .logs_bloom = block.header.logs_bloom,
+            .withdrawals_root = std.mem.zeroes(Hash32), // TODO
+        };
     }
 
-    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u64, gas_available: u64, chain_id: u64) !struct { sender_address: types.Address, effective_gas_price: u64 } {
+    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u64, gas_available: u64, chain_id: u64) !struct { sender_address: Address, effective_gas_price: config.ChainId } {
         if (tx.getGasLimit() > gas_available)
             return error.InsufficientGas;
 
-        const txn_signer = try signer.TxnSigner.init(chain_id);
+        const txn_signer = try signer.TxnSigner.init(@intFromEnum(chain_id));
         const sender_address = txn_signer.get_sender(allocator, tx);
 
         const effective_gas_price = switch (tx) {
@@ -163,4 +199,19 @@ pub const Blockchain = struct {
         };
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
+
+    const Environment = struct {
+        caller: Address,
+        block_hashes: [256]Hash32,
+        origin: Address,
+        coinbase: Address,
+        number: u64,
+        base_fee_per_gas: u256,
+        gas_limit: u64,
+        gas_price: u64,
+        time: u256,
+        prev_randao: Bytes32,
+        state: *State,
+        chain_id: config.ChainId,
+    };
 };
