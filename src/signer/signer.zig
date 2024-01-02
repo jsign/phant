@@ -12,8 +12,6 @@ const Address = @import("../types/types.zig").Address;
 
 // TODO: TxnSigner should be generalized to:
 // - Only accept correct transactions types depending on the fork we're in.
-// - Handle "v" correctly depending on transaction type.
-// For now it's a post London signer, and only support 1559 txns.
 pub const TxnSigner = struct {
     chain_id: u64,
     ecdsa_signer: ecdsa.Signer,
