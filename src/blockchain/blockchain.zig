@@ -1,7 +1,10 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
 const config = @import("../config/config.zig");
+const transaction = @import("../types/transaction.zig");
 const vm = @import("../vm/vm.zig"); // TODO: Avoid this import?
+const rlp = @import("zig-rlp");
+const Allocator = std.mem.Allocator;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const StateDB = vm.StateDB;
@@ -12,19 +15,23 @@ pub const Blockchain = struct {
     const ELASTICITY_MULTIPLIER = 2;
     const GAS_LIMIT_ADJUSTMENT_FACTOR = 1024;
     const GAS_LIMIT_MINIMUM = 5000;
+    const EMPTY_OMMER_HASH = [_]u8{0} ** 32; // TODO
 
+    allocator: Allocator,
     chain_id: config.ChainId,
     flat_db: *StateDB,
     last_256_blocks_hashes: [256]Hash32,
     previous_block: Block,
 
     pub fn init(
+        allocator: Allocator,
         chain_id: config.ChainId,
         flat_db: *StateDB,
         prev_block_header: BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
     ) void {
         return Blockchain{
+            .allocator = allocator,
             .chain_id = chain_id,
             .flat_db = flat_db,
             .prev_block_header = prev_block_header,
@@ -33,13 +40,13 @@ pub const Blockchain = struct {
     }
 
     pub fn execute_block(self: Blockchain, block: Block) !void {
-        try self.validate_block(block);
+        try self.validate_block(self.allocator, block);
         // TODO: continue
     }
 
-    fn validateBlockHeader(prev_block: BlockHeader, block: BlockHeader) !void {
-        try checkGasLimit(block.gas_limit, prev_block.gas_limit);
-        if (block.gas_used > block.gas_limit)
+    fn validateBlockHeader(allocator: Allocator, prev_block: BlockHeader, curr_block: BlockHeader) !void {
+        try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
+        if (curr_block.gas_used > curr_block.gas_limit)
             return error.GasLimitExceeded;
 
         // Check base fee.
@@ -55,8 +62,26 @@ pub const Blockchain = struct {
             const base_fee_per_gas_delta = prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR;
             break :blk prev_block.base_fee_per_gas - base_fee_per_gas_delta;
         };
-        if (expected_base_fee_per_gas != block.base_fee_per_gas)
+        if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
             return error.InvalidBaseFee;
+
+        if (curr_block.timestamp > prev_block.timestamp)
+            return error.InvalidTimestamp;
+        if (curr_block.block_number != prev_block.block_number + 1)
+            return error.InvalidBlockNumber;
+        if (curr_block.extra_data.len > 32)
+            return error.ExtraDataTooLong;
+
+        if (curr_block.difficulty != 0)
+            return error.InvalidDifficulty;
+        if (curr_block.nonce == [_]u8{0} ** 8)
+            return error.InvalidNonce;
+        if (curr_block.ommers_hash != EMPTY_OMMER_HASH)
+            return error.InvalidOmmersHash;
+
+        const prev_block_hash = transaction.RLPHash(BlockHeader, allocator, prev_block, null);
+        if (curr_block.parent_hash != prev_block_hash)
+            return error.InvalidParentHash;
     }
 
     fn checkGasLimit(gas_limit: u256, parent_gas_limit: u256) !void {
