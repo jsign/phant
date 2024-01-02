@@ -5,7 +5,9 @@ const config = @import("../config/config.zig");
 const transaction = @import("../types/transaction.zig");
 const vm = @import("../vm/vm.zig"); // TODO: Avoid this import?
 const rlp = @import("zig-rlp");
+const signer = @import("../signer/signer.zig");
 const Allocator = std.mem.Allocator;
+const LogsBloom = types.LogsBloom;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const StateDB = vm.StateDB;
@@ -16,6 +18,14 @@ pub const Blockchain = struct {
     const ELASTICITY_MULTIPLIER = 2;
     const GAS_LIMIT_ADJUSTMENT_FACTOR = 1024;
     const GAS_LIMIT_MINIMUM = 5000;
+
+    const BlockExecutionResult = struct {
+        gas_used: u64,
+        transactions_root: Hash32,
+        receipts_root: Hash32,
+        logs_bloom: LogsBloom,
+        withdrawals_root: Hash32,
+    };
 
     allocator: Allocator,
     chain_id: config.ChainId,
@@ -44,13 +54,18 @@ pub const Blockchain = struct {
         if (block.uncles.len != 0)
             return error.NotEmptyUncles;
 
-        var result = try self.execute_block(block);
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
 
+        // Execute block.
+        var result = try applyBody(arena, self, block);
+
+        // Post execution checks.
         if (result.gas_used != block.header.gas_used)
             return error.InvalidGasUsed;
-        if (result.transactions_root != block.header.transactions_root) // TODO: Do before exec.
+        if (result.transactions_root != block.header.transactions_root)
             return error.InvalidTransactionsRoot;
-        if (result.receipts_root != block.header.receipts_root) // TODO: Do before exec.
+        if (result.receipts_root != block.header.receipts_root)
             return error.InvalidReceiptsRoot;
         if (result.state.root() != block.header.state_root)
             return error.InvalidStateRoot;
@@ -111,5 +126,41 @@ pub const Blockchain = struct {
         if (gas_limit >= parent_gas_limit + max_delta) return error.GasLimitTooHigh;
         if (gas_limit <= parent_gas_limit - max_delta) return error.GasLimitTooLow;
         return gas_limit >= GAS_LIMIT_MINIMUM;
+    }
+
+    fn applyBody(allocator: Allocator, chain: Blockchain, block: Block) !BlockExecutionResult {
+        _ = chain;
+        _ = allocator;
+        const gas_available = block.header.gas_limit;
+        _ = gas_available;
+        for (block.transactions) |tx| {
+            _ = tx;
+        }
+    }
+
+    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u64, gas_available: u64, chain_id: u64) !struct { sender_address: types.Address, effective_gas_price: u64 } {
+        if (tx.getGasLimit() > gas_available)
+            return error.InsufficientGas;
+
+        const txn_signer = try signer.TxnSigner.init(chain_id);
+        const sender_address = txn_signer.get_sender(allocator, tx);
+
+        const effective_gas_price = switch (tx) {
+            .FeeMarketTxn => |fm_tx| blk: {
+                if (fm_tx.max_fee_per_gas < fm_tx.max_priority_fee_per_gas)
+                    return error.InvalidMaxFeePerGas;
+                if (fm_tx.max_fee_per_gas < base_fee_per_gas)
+                    return error.MaxFeePerGasLowerThanBaseFee;
+
+                const priority_fee_per_gas = @min(tx.max_priority_fee_per_gas, tx.max_fee_per_gas - base_fee_per_gas);
+                break :blk priority_fee_per_gas + base_fee_per_gas;
+            },
+            .LegacyTxn, .AccessListTxn => blk: {
+                if (tx.getGasPrice() < base_fee_per_gas)
+                    return error.GasPriceLowerThanBaseFee;
+                break :blk tx.getGasPrice();
+            },
+        };
+        return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 };
