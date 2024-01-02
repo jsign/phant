@@ -1,6 +1,6 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
-const block = @import("../types/block.zig");
+const blocks = @import("../types/block.zig");
 const config = @import("../config/config.zig");
 const transaction = @import("../types/transaction.zig");
 const vm = @import("../vm/vm.zig"); // TODO: Avoid this import?
@@ -39,9 +39,29 @@ pub const Blockchain = struct {
         };
     }
 
-    pub fn execute_block(self: Blockchain, block: Block) !void {
+    pub fn run_block(self: Blockchain, block: Block) !void {
         try self.validate_block(self.allocator, block);
-        // TODO: continue
+        if (block.uncles.len != 0)
+            return error.NotEmptyUncles;
+
+        var result = try self.execute_block(block);
+
+        if (result.gas_used != block.header.gas_used)
+            return error.InvalidGasUsed;
+        if (result.transactions_root != block.header.transactions_root) // TODO: Do before exec.
+            return error.InvalidTransactionsRoot;
+        if (result.receipts_root != block.header.receipts_root) // TODO: Do before exec.
+            return error.InvalidReceiptsRoot;
+        if (result.state.root() != block.header.state_root)
+            return error.InvalidStateRoot;
+        if (result.logs_bloom != block.header.logs_bloom)
+            return error.InvalidLogsBloom;
+        if (result.withdrawals_root != block.header.withdrawals_root)
+            return error.InvalidWithdrawalsRoot;
+
+        // TODO: do this more efficiently with a circular buffer.
+        std.mem.copyForwards(Hash32, self.last_256_blocks_hashes, self.last_256_blocks_hashes[1..]);
+        self.last_256_blocks_hashes[255] = block.hash();
     }
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
@@ -78,7 +98,7 @@ pub const Blockchain = struct {
             return error.InvalidDifficulty;
         if (curr_block.nonce == [_]u8{0} ** 8)
             return error.InvalidNonce;
-        if (curr_block.ommers_hash != block.empty_uncle_hash)
+        if (curr_block.ommers_hash != blocks.empty_uncle_hash)
             return error.InvalidOmmersHash;
 
         const prev_block_hash = transaction.RLPHash(BlockHeader, allocator, prev_block, null);
