@@ -225,7 +225,11 @@ pub const Blockchain = struct {
         chain_id: config.ChainId,
     };
 
-    fn processTransaction(env: Environment, tx: transaction.Txn) !struct { gas_left: u64 } {
+    const AddressSet = std.HashMap(Address, void);
+    const AddressKeyTuple = struct { address: Address, key: Bytes32 };
+    const AddressKeySet = std.HashMap(AddressKeyTuple, void);
+
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Txn) !struct { gas_left: u64 } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
 
@@ -248,6 +252,67 @@ pub const Blockchain = struct {
 
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
         env.state.setBalance(sender, sender_balance_after_gas_fee);
+
+        var preaccessed_addresses = AddressSet.init(allocator);
+        defer preaccessed_addresses.deinit();
+        var preaccessed_stoarge_keys = AddressKeySet.init(allocator);
+        defer preaccessed_stoarge_keys.deinit();
+        preaccessed_addresses.put(env.coinbase, null);
+        switch (tx) {
+            .LegacyTxn => {},
+            inline else => {
+                for (tx.access_list) |al| {
+                    preaccessed_addresses.put(al.address, null);
+                    for (al.storage_keys) |key| {
+                        preaccessed_stoarge_keys.put(.{ .address = al.address, .key = key }, null);
+                    }
+                }
+            },
+        }
+
+        const message = prepareMessage(
+            sender,
+            tx.getTo(),
+            tx.getValue(),
+            tx.getData(),
+            tx.getGasLimit(),
+            env,
+            preaccessed_addresses,
+            preaccessed_stoarge_keys,
+        );
+        const output = processMessageCall(message, env);
+
+        const gas_used = tx.getGasLimit() - output.gas_left;
+        const gas_refund = @min(gas_used / 5, output.refund_counter);
+        const gas_refund_amount = (output.gas_left + gas_refund) * env.gas_price;
+
+        const priority_fee_per_gas = env.gas_price - env.base_fee_per_gas;
+        const transaction_fee = (tx.getGasLimit() - output.gas_left) * priority_fee_per_gas;
+        const total_gas_used = gas_used - gas_refund;
+
+        const sender_balance_after_refund = sender_account.balance + gas_refund_amount;
+        env.state.setBalance(sender, sender_balance_after_refund);
+
+        const coinbase_account = try env.state.getAccount(env.coinbase);
+        const coinbase_balance_after_mining_fee = coinbase_account.balance + transaction_fee;
+
+        if (coinbase_balance_after_mining_fee != 0) {
+            env.state.setBalance(env.coinbase, coinbase_balance_after_mining_fee);
+        } else if (env.state.accountExistsAndIsEmpty(env.coinbase)) {
+            env.state.destroyAccount(env.coinbase);
+        }
+
+        for (output.accounts_to_delete) |account| {
+            env.state.destroyAccount(account);
+        }
+
+        for (output.touched_accounts) |address| {
+            if (env.state.accountExistsAndIsEmpty(address)) {
+                env.state.destroyAccount(address);
+            }
+        }
+
+        return .{ total_gas_used, output.logs, output.err };
     }
 
     fn validateTransaction(tx: transaction.Txn) bool {
@@ -285,5 +350,67 @@ pub const Blockchain = struct {
 
     fn initCodeCost(code_length: usize) u64 {
         return GAS_INIT_CODE_WORD_COST * @ceil(code_length / 32);
+    }
+
+    const Message = struct {
+        caller: Address,
+        target: ?Address,
+        current_target: Address,
+        gas: u64,
+        value: u256,
+        data: []const u8,
+        code_address: ?Address,
+        code: []const u8,
+        depth: u64, // TODO: narrow it down.
+        accessed_addresses: AddressSet,
+        accessed_storage_keys: AddressKeySet,
+
+        pub fn deinit(self: *Message) void {
+            self.accessed_addresses.deinit();
+            self.accessed_addresses = undefined;
+            self.accessed_storage_keys.deinit();
+            self.accessed_storage_keys = undefined;
+        }
+    };
+
+    // prepareMessage prepares an EVM message.
+    // The caller must call deinit() on the returned Message.
+    fn prepareMessage(caller: Address, target: ?Address, value: u256, data: []const u8, gas: u64, env: Environment, code_address: ?Address, preprocessed_addresses: AddressSet, preprocessed_storage_keys: AddressKeySet) !Message {
+        const target_msg_code = if (target == null)
+            .{ try computeContractAddress(caller, env.state.getAccount(caller).nonce - 1), [_]u8{0}, data }
+        else
+            .{ target, data, env.state.getAccount(target).code };
+        const current_target = target_msg_code[0];
+        const msg_data = target_msg_code[1];
+        const code = target_msg_code[2];
+
+        var accessed_addresses = try preprocessed_addresses.clone();
+        accessed_addresses.put(current_target);
+        accessed_addresses.put(caller);
+
+        return .{
+            .caller = caller,
+            .target = target,
+            .current_target = current_target,
+            .gas = gas,
+            .value = value,
+            .data = data,
+            .code_address = code_address,
+            .code = code,
+            .depth = 0,
+            .accessed_addresses = accessed_addresses,
+            .accessed_storage_keys = preaccessed_storage_keys,
+        };
+    }
+
+    fn computeContractAddress(allocator: Allocator, address: Address, nonce: u64) !Address {
+        var out = std.ArrayList(u8).init(allocator);
+        defer out.deinit();
+        try rlp.serialize(struct { addr: Address, nonce: u64 }, allocator, .{ address, nonce }, out);
+        const computed_address = std.crypto.hash.sha3.Keccak256(out.items);
+        const canonical_address = computed_address[12..];
+        var padded_address: Address = std.mem.zeroes(Address);
+        @memcpy(padded_address[12..], canonical_address);
+        return padded_address;
     }
 };
