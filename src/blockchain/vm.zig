@@ -24,6 +24,7 @@ pub const VM = struct {
     evm: [*c]evmc.evmc_vm,
     host: evmc.struct_evmc_host_interface,
 
+    // init creates a new EVM VM instance. The caller must call deinit() when done.
     pub fn init(env: Environment) VM {
         var evm = evmc.evmc_create_evmone();
         log.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
@@ -31,24 +32,25 @@ pub const VM = struct {
             .env = env,
             .evm = evm,
             .host = evmc.struct_evmc_host_interface{
-                .account_exists = account_exists,
-                .get_storage = get_storage,
-                .set_storage = set_storage,
-                .get_balance = get_balance,
-                .get_code_size = get_code_size,
-                .get_code_hash = get_code_hash,
-                .copy_code = copy_code,
-                .selfdestruct = self_destruct,
-                .call = call,
-                .get_tx_context = get_tx_context,
-                .get_block_hash = get_block_hash,
-                .emit_log = emit_log,
-                .access_account = access_account,
-                .access_storage = access_storage,
+                .account_exists = EVMOneHost.account_exists,
+                .get_storage = EVMOneHost.get_storage,
+                .set_storage = EVMOneHost.set_storage,
+                .get_balance = EVMOneHost.get_balance,
+                .get_code_size = EVMOneHost.get_code_size,
+                .get_code_hash = EVMOneHost.get_code_hash,
+                .copy_code = EVMOneHost.copy_code,
+                .selfdestruct = EVMOneHost.self_destruct,
+                .call = EVMOneHost.call,
+                .get_tx_context = EVMOneHost.get_tx_context,
+                .get_block_hash = EVMOneHost.get_block_hash,
+                .emit_log = EVMOneHost.emit_log,
+                .access_account = EVMOneHost.access_account,
+                .access_storage = EVMOneHost.access_storage,
             },
         };
     }
 
+    // deinit destroys a VM instance.
     pub fn deinit(self: *VM) void {
         self.evm.destroy();
         self.evm = undefined;
@@ -73,33 +75,33 @@ pub const VM = struct {
             .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind.
             .code_address = undefined, // EVMC docs: field not mandatory for depth 0 calls.
         };
-        const result = call(@ptrCast(self), @ptrCast(&evmc_message));
+        const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
         log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
         return result;
     }
+};
 
-    // ### EVMC Host Interface ###
-
+// EVMOneHost contains the implementation of the EVMC host interface.
+// https://evmc.ethereum.org/structevmc__host__interface.html
+const EVMOneHost = struct {
     fn get_tx_context(ctx: ?*evmc.struct_evmc_host_context) callconv(.C) evmc.struct_evmc_tx_context {
         log.debug("get_tx_context()", .{});
-        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?))); // TODO: alignCast needed?
         return evmc.struct_evmc_tx_context{
-            .tx_gas_price = util.to_evmc_bytes32(vm.env.?.txn.gas_price),
-            .tx_origin = util.to_evmc_address(vm.env.?.txn.from),
-            .block_coinbase = util.to_evmc_address(vm.env.?.block.coinbase),
+            .tx_gas_price = toEVMCBytes32(vm.env.?.txn.gas_price),
+            .tx_origin = toEVMCAddress(vm.env.?.txn.from),
+            .block_coinbase = toEVMCAddress(vm.env.?.block.coinbase),
             .block_number = @intCast(vm.env.?.block.number),
             .block_timestamp = @intCast(vm.env.?.block.timestamp),
             .block_gas_limit = @intCast(vm.env.?.block.gas_limit),
-            .block_prev_randao = util.to_evmc_bytes32(vm.env.?.block.prev_randao),
-            .chain_id = util.to_evmc_bytes32(vm.env.?.txn.chain_id),
-            .block_base_fee = util.to_evmc_bytes32(vm.env.?.block.base_fee),
+            .block_prev_randao = toEVMCBytes32(vm.env.?.block.prev_randao),
+            .chain_id = toEVMCBytes32(vm.env.?.txn.chain_id),
+            .block_base_fee = toEVMCBytes32(vm.env.?.block.base_fee),
         };
     }
 
-    fn get_block_hash(
-        ctx: ?*evmc.struct_evmc_host_context,
-        xx: i64,
-    ) callconv(.C) evmc.evmc_bytes32 {
+    fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, xx: i64) callconv(.C) evmc.evmc_bytes32 {
         _ = xx;
         _ = ctx;
         @panic("TODO");
@@ -242,7 +244,7 @@ pub const VM = struct {
         log.debug("call depth={d} sender={} recipient={}", .{ msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
 
         // Check if the target address is a contract, and do the appropiate call.
-        const recipient_account = vm.statedb.getAccount(util.from_evmc_address(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
+        const recipient_account = vm.statedb.getAccount(fromEVMCAddress(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
         if (recipient_account.code.len != 0) {
             log.debug("contract call, codelen={d}", .{recipient_account.code.len});
             // Persist the current context. We'll restore it after the call returns.
