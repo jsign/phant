@@ -1,6 +1,7 @@
 const std = @import("std");
 const fmt = std.fmt;
 const Allocator = std.mem.Allocator;
+const types = @import("types.zig");
 
 // This function turns an optionally '0x'-prefixed hex string
 // to a types.Hash32

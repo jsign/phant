@@ -3,7 +3,7 @@ const types = @import("../types/types.zig");
 const blocks = @import("../types/block.zig");
 const config = @import("../config/config.zig");
 const transaction = @import("../types/transaction.zig");
-const vm = @import("../vm/vm.zig"); // TODO: Avoid this import?
+const vm = @import("vm.zig");
 const rlp = @import("zig-rlp");
 const signer = @import("../signer/signer.zig");
 const Allocator = std.mem.Allocator;
@@ -14,6 +14,7 @@ const StateDB = vm.StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
+const VM = vm.VM;
 
 pub const Blockchain = struct {
     const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8;
@@ -31,6 +32,20 @@ pub const Blockchain = struct {
     const TX_CREATE_COST = 32000;
     const TX_ACCESS_LIST_ADDRESS_COST = 2400;
     const TX_ACCESS_LIST_STORAGE_KEY_COST = 1900;
+
+    const PRE_COMPILED_CONTRACT_ADDRESSES = [_]Address{
+        // TODO: see if it's worth importing some .h file from EVMOne
+        // an instantiate this at comptime to avoid maintaining this list.
+        [_]u8{0} ** 19 ++ [_]u8{1}, // ECRECOVER
+        [_]u8{0} ** 19 ++ [_]u8{2}, // SHA256
+        [_]u8{0} ** 19 ++ [_]u8{3}, // RIPEMD160
+        [_]u8{0} ** 19 ++ [_]u8{4}, // IDENTITY_ADDRESS
+        [_]u8{0} ** 19 ++ [_]u8{5}, // MODEXP_ADDRESS
+        [_]u8{0} ** 19 ++ [_]u8{6}, // ALT_BN128_ADD
+        [_]u8{0} ** 19 ++ [_]u8{7}, // ALT_BN128_MUL
+        [_]u8{0} ** 19 ++ [_]u8{8}, // ALT_BN128_PAIRING_CHECK
+        [_]u8{0} ** 19 ++ [_]u8{9}, // BLAKE2F
+    };
 
     allocator: Allocator,
     chain_id: config.ChainId,
@@ -248,7 +263,6 @@ pub const Blockchain = struct {
         const effective_gas_fee = tx.getGasLimit() * env.gas_price;
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
         env.state.incrementNonce(sender);
-        _ = gas;
 
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
         env.state.setBalance(sender, sender_balance_after_gas_fee);
@@ -275,7 +289,7 @@ pub const Blockchain = struct {
             tx.getTo(),
             tx.getValue(),
             tx.getData(),
-            tx.getGasLimit(),
+            gas,
             env,
             preaccessed_addresses,
             preaccessed_stoarge_keys,
@@ -302,9 +316,7 @@ pub const Blockchain = struct {
             env.state.destroyAccount(env.coinbase);
         }
 
-        for (output.accounts_to_delete) |account| {
-            env.state.destroyAccount(account);
-        }
+        // Account destruction is already managed by EVMC `selfdestruct(...)` callback.
 
         for (output.touched_accounts) |address| {
             if (env.state.accountExistsAndIsEmpty(address)) {
@@ -352,7 +364,7 @@ pub const Blockchain = struct {
         return GAS_INIT_CODE_WORD_COST * @ceil(code_length / 32);
     }
 
-    const Message = struct {
+    pub const Message = struct {
         caller: Address,
         target: ?Address,
         current_target: Address,
@@ -375,18 +387,39 @@ pub const Blockchain = struct {
 
     // prepareMessage prepares an EVM message.
     // The caller must call deinit() on the returned Message.
-    fn prepareMessage(caller: Address, target: ?Address, value: u256, data: []const u8, gas: u64, env: Environment, code_address: ?Address, preprocessed_addresses: AddressSet, preprocessed_storage_keys: AddressKeySet) !Message {
-        const target_msg_code = if (target == null)
-            .{ try computeContractAddress(caller, env.state.getAccount(caller).nonce - 1), [_]u8{0}, data }
-        else
-            .{ target, data, env.state.getAccount(target).code };
-        const current_target = target_msg_code[0];
-        const msg_data = target_msg_code[1];
-        const code = target_msg_code[2];
+    fn prepareMessage(
+        caller: Address,
+        target: ?Address,
+        value: u256,
+        data: []const u8,
+        gas: u64,
+        env: Environment,
+        code_address: ?Address,
+        preaccessed_addresses: AddressSet,
+        preaccessed_storage_keys: AddressKeySet,
+    ) !Message {
+        var current_target: Address = undefined;
+        var msg_data: []const u8 = undefined;
+        var code: []const u8 = undefined;
 
-        var accessed_addresses = try preprocessed_addresses.clone();
-        accessed_addresses.put(current_target);
-        accessed_addresses.put(caller);
+        if (target == null) {
+            current_target = try computeContractAddress(caller, env.state.getAccount(caller).nonce - 1);
+            msg_data = &[_]u8{0};
+            code = data;
+        } else {
+            current_target = target;
+            msg_data = data;
+            code = env.state.getAccount(target).code;
+            if (code_address == null)
+                code_address = target;
+        }
+
+        var accessed_addresses = try preaccessed_addresses.clone();
+        try accessed_addresses.put(current_target);
+        try accessed_addresses.put(caller);
+        for (PRE_COMPILED_CONTRACT_ADDRESSES) |address| {
+            try accessed_addresses.put(address);
+        }
 
         return .{
             .caller = caller,
@@ -394,12 +427,12 @@ pub const Blockchain = struct {
             .current_target = current_target,
             .gas = gas,
             .value = value,
-            .data = data,
+            .data = msg_data,
             .code_address = code_address,
             .code = code,
             .depth = 0,
             .accessed_addresses = accessed_addresses,
-            .accessed_storage_keys = preaccessed_storage_keys,
+            .accessed_storage_keys = try preaccessed_storage_keys.clone(),
         };
     }
 
@@ -412,5 +445,28 @@ pub const Blockchain = struct {
         var padded_address: Address = std.mem.zeroes(Address);
         @memcpy(padded_address[12..], canonical_address);
         return padded_address;
+    }
+
+    const MessageCallOutput = struct {
+        gas_left: u64,
+        refund_counter: u256,
+        // logs: Union[Tuple[()], Tuple[Log, ...]] TODO
+        // accounts_to_delete: AddressKeySet, // TODO (delete?)
+        // touched_accounts: AddressKeySet, // TODO (delete?)
+        // error: Optional[Exception] TODO
+    };
+
+    fn processMessageCall(message: Message, env: Environment) !MessageCallOutput {
+        const vm_instance = VM.init(env);
+        defer vm_instance.deinit();
+
+        const result = try vm_instance.processMessageCall(message);
+        defer result.release();
+        return .{
+            .gas_left = result.gas_left,
+            .refund_counter = result.gas_refund,
+            // .accounts_to_delete = AddressKeySet,
+            // .touched_accounts = vm_instance.touched_accounts,
+        };
     }
 };
