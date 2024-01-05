@@ -2,10 +2,9 @@ const evmc = @cImport({
     @cInclude("evmone.h");
 });
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const util = @import("util.zig");
 const types = @import("../types/types.zig");
 const blockchain = @import("blockchain.zig").Blockchain; // TODO: unnest
+const Allocator = std.mem.Allocator;
 const Environment = blockchain.Environment;
 const Message = blockchain.Message;
 const Txn = types.Txn;
@@ -14,12 +13,12 @@ const Block = types.Block;
 const AccountState = types.AccountState;
 const Bytecode = types.Bytecode;
 const Address = types.Address;
-const assert = std.debug.assert;
-const log = std.log.scoped(.vm);
 const StateDB = @import("../vm/statedb.zig");
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
+const assert = std.debug.assert;
 
-// TODO: Rename to instance?
+const log = std.log.scoped(.vm);
+
 pub const VM = struct {
     env: Environment,
     evm: [*c]evmc.evmc_vm,
@@ -59,11 +58,11 @@ pub const VM = struct {
         const kind = if (msg.target) evmc.EVMC_CALL orelse evmc.EVMC_CREATE;
         const evmc_message = evmc.struct_evmc_message{
             .kind = kind,
-            .flags = 0, // TODO: STATIC?
+            .flags = evmc.EVMC_STATIC,
             .depth = 0,
-            .gas = @intCast(msg.gas), // TODO(jsign): why evmc expects a i64 for gas instead of u64?
-            .recipient = util.to_evmc_address(msg.current_target),
-            .sender = util.to_evmc_address(msg.caller),
+            .gas = @intCast(msg.gas),
+            .recipient = toEVMCAddress(msg.current_target),
+            .sender = toEVMCAddress(msg.caller),
             .input_data = msg.data.ptr,
             .input_size = msg.data.len,
             .value = blk: {
@@ -287,3 +286,40 @@ pub const VM = struct {
         };
     }
 };
+
+// toEVMCAddress transforms an Address or ?Address into an evmc_address.
+fn toEVMCAddress(address: anytype) evmc.struct_evmc_address {
+    const addr_typeinfo = @typeInfo(@TypeOf(address));
+    if (@TypeOf(address) != Address and addr_typeinfo.Optional.child != Address) {
+        @compileError("address must be of type Address or ?Address");
+    }
+
+    // Address type.
+    if (@TypeOf(address) == Address) {
+        return evmc.struct_evmc_address{
+            .bytes = address,
+        };
+    }
+    if (address) |addr| {
+        return toEVMCAddress(addr);
+    }
+    return evmc.struct_evmc_address{
+        .bytes = [_]u8{0} ** 20,
+    };
+}
+
+// fromEVMCAddress transforms an evmc_address into an Address.
+fn fromEVMCAddress(address: evmc.struct_evmc_address) Address {
+    return address.bytes;
+}
+
+// toEVMCBytes32 transforms a u256 into an evmc_bytes32.
+fn toEVMCBytes32(num: u256) evmc.evmc_bytes32 {
+    return evmc.struct_evmc_bytes32{
+        .bytes = blk: {
+            var ret: [32]u8 = undefined;
+            std.mem.writeIntSliceBig(u256, &ret, num);
+            break :blk ret;
+        },
+    };
+}

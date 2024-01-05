@@ -373,7 +373,6 @@ pub const Blockchain = struct {
         data: []const u8,
         code_address: ?Address,
         code: []const u8,
-        depth: u64, // TODO: narrow it down.
         accessed_addresses: AddressSet,
         accessed_storage_keys: AddressKeySet,
 
