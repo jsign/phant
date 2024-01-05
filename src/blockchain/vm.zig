@@ -17,6 +17,7 @@ const Address = types.Address;
 const assert = std.debug.assert;
 const log = std.log.scoped(.vm);
 const StateDB = @import("../vm/statedb.zig");
+const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 
 // TODO: Rename to instance?
 pub const VM = struct {
@@ -49,8 +50,9 @@ pub const VM = struct {
         };
     }
 
-    pub fn deinit() void {
-        // TODO(jsign): check freeing evmone instance.
+    pub fn deinit(self: *VM) void {
+        self.evm.destroy();
+        self.evm = undefined;
     }
 
     pub fn processMessageCall(self: *VM, msg: Message) !evmc.struct_evmc_result {
@@ -220,7 +222,7 @@ pub const VM = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
     ) callconv(.C) evmc.enum_evmc_access_status {
-        log.debug("access_account(addr={})", .{std.fmt.fmtSliceHexLower(&addr.*.bytes)});
+        log.debug("access_account(addr={})", .{fmtSliceHexLower(&addr.*.bytes)});
         _ = ctx;
         return evmc.EVMC_ACCESS_COLD;
     }
@@ -236,19 +238,9 @@ pub const VM = struct {
         return evmc.EVMC_ACCESS_COLD; // TODO(jsign): fix
     }
 
-    fn call(
-        ctx: ?*evmc.struct_evmc_host_context,
-        msg: [*c]const evmc.struct_evmc_message,
-    ) callconv(.C) evmc.struct_evmc_result {
+    fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        log.debug(
-            "call depth={d} sender={} recipient={}",
-            .{
-                msg.*.depth,
-                std.fmt.fmtSliceHexLower(&msg.*.sender.bytes),
-                std.fmt.fmtSliceHexLower(&msg.*.recipient.bytes),
-            },
-        ); // TODO(jsign): explore creating custom formatter?
+        log.debug("call depth={d} sender={} recipient={}", .{ msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
 
         // Check if the target address is a contract, and do the appropiate call.
         const recipient_account = vm.statedb.getAccount(util.from_evmc_address(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
