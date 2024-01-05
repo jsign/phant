@@ -158,20 +158,18 @@ const EVMOneHost = struct {
         return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix https://evmc.ethereum.org/group__EVMC.html#gae012fd6b8e5c23806b507c2d3e9fb1aa
     }
 
-    fn get_balance(
-        ctx: ?*evmc.struct_evmc_host_context,
-        addr: [*c]const evmc.evmc_address,
-    ) callconv(.C) evmc.evmc_uint256be {
-        _ = ctx;
-        const addr_hex = std.fmt.bytesToHex(addr.*.bytes, std.fmt.Case.lower);
-        log.debug("evmc call -> getBalance(0x{s})", .{addr_hex});
+    fn get_balance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_uint256be {
+        evmclog.debug("getBalance addr=0x{})", .{fmtSliceHexLower(&addr)});
 
-        var beval: [32]u8 = undefined;
-        std.mem.writeIntSliceBig(u256, &beval, 142);
-
-        return evmc.evmc_uint256be{
-            .bytes = beval,
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address = fromEVMCAddress(addr.*);
+        const balance_bytes = blk: {
+            const balance = vm.env.state.getAccount(address) orelse 0;
+            var buf: [32]u8 = undefined;
+            std.mem.writeIntSliceBig(u256, &buf, balance);
+            break :blk buf;
         };
+        return evmc.evmc_uint256be{ .bytes = balance_bytes };
     }
 
     fn get_code_size(
