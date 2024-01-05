@@ -29,6 +29,7 @@ pub const VM = struct {
     pub fn init(env: Environment) VM {
         var evm = evmc.evmc_create_evmone();
         log.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
+        // TODO: database snapshoting, and (potential) revertion.
         return .{
             .env = env,
             .evm = evm,
@@ -126,12 +127,13 @@ const EVMOneHost = struct {
     fn get_storage(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
-        k: [*c]const evmc.evmc_bytes32,
+        key: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.evmc_bytes32 {
-        const address = fromEVMCAddress(addr.*);
-        evmclog.debug("get_storage addr=0x{} key={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&k.*) });
+        evmclog.debug("get_storage addr=0x{} key={}", .{ fmtSliceHexLower(&addr), fmtSliceHexLower(&key.*) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
+        const address = fromEVMCAddress(addr.*);
         return vm.env.state.getStorage(address, k) orelse std.mem.zeroes(Hash32);
     }
 
@@ -141,14 +143,19 @@ const EVMOneHost = struct {
         key: [*c]const evmc.evmc_bytes32,
         value: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.enum_evmc_storage_status {
+        evmclog.debug("set_storage addr=0x{} key={} value={}", .{ fmtSliceHexLower(&addr), fmtSliceHexLower(&key.*), fmtSliceHexLower(&value.*) });
+
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-
-        const skey = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
-        const svalue = std.mem.readIntSlice(u256, &value.*.bytes, std.builtin.Endian.Big);
-
-        vm.statedb.setStorage(addr.*.bytes, skey, svalue) catch unreachable; // TODO(jsign): manage catch.
-
-        return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix
+        const address = fromEVMCAddress(addr.*);
+        const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
+        const v = std.mem.readIntSlice(u256, &value.*.bytes, std.builtin.Endian.Big);
+        vm.env.state.setStorage(address, k, v) catch |err| switch (err) {
+            // From EVMC docs: "The VM MUST make sure that the account exists. This requirement is only a formality
+            // because VM implementations only modify storage of the account of the current execution context".
+            error.AccountDoesNotExist => @panic("set storage in non-existent account"),
+            else => @panic("OOO"),
+        };
+        return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix https://evmc.ethereum.org/group__EVMC.html#gae012fd6b8e5c23806b507c2d3e9fb1aa
     }
 
     fn get_balance(
@@ -319,7 +326,6 @@ fn toEVMCAddress(address: anytype) evmc.struct_evmc_address {
     };
 }
 
-// fromEVMCAddress transforms an evmc_address into an Address.
 fn fromEVMCAddress(address: evmc.struct_evmc_address) Address {
     return address.bytes;
 }

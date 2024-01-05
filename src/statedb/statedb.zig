@@ -34,7 +34,7 @@ pub fn getStorage(self: *StateDB, addr: Address, key: u256) !u256 {
 }
 
 pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: u256) !void {
-    var account = try self.getAccount(addr);
+    var account = try self.getAccount(addr) orelse return error.AccountDoesNotExist;
     try account.storage.put(key, value);
 }
 
