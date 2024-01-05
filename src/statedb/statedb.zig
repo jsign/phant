@@ -24,6 +24,7 @@ pub fn init(allocator: Allocator, accounts_state: []AccountState) !StateDB {
     };
 }
 
+// TODO: return a more focused parameter (balance, code, nonce)
 pub fn getAccount(self: *StateDB, addr: Address) !?AccountState {
     return try self.db.get(addr);
 }
@@ -48,8 +49,8 @@ pub fn incrementNonce(self: *StateDB, addr: Address) !void {
     account.nonce += 1;
 }
 
-pub fn getCode(self: *StateDB, addr: Address) ![]const u8 {
-    var account = try self.get(addr);
+pub fn getCode(self: *StateDB, addr: Address) !?[]const u8 {
+    var account = try self.getAccount(addr) orelse return null;
     return account.code;
 }
 

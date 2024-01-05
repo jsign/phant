@@ -172,13 +172,12 @@ const EVMOneHost = struct {
         return evmc.evmc_uint256be{ .bytes = balance_bytes };
     }
 
-    fn get_code_size(
-        ctx: ?*evmc.struct_evmc_host_context,
-        addr: [*c]const evmc.evmc_address,
-    ) callconv(.C) usize {
-        _ = addr;
-        _ = ctx;
-        @panic("TODO");
+    fn get_code_size(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) usize {
+        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&addr)});
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address = fromEVMCAddress(addr.*);
+        return if (vm.env.state.getCode(address)) |code| code.len else 0;
     }
 
     fn get_code_hash(
