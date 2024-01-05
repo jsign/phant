@@ -12,6 +12,7 @@ const TxnSigner = @import("../signer/signer.zig").TxnSigner;
 const Block = types.Block;
 const AccountState = types.AccountState;
 const Bytecode = types.Bytecode;
+const Hash32 = types.Hash32;
 const Address = types.Address;
 const StateDB = @import("../statedb/statedb.zig");
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
@@ -109,7 +110,7 @@ const EVMOneHost = struct {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const idx = vm.env.number - block_number;
         if (idx < 0 or idx >= vm.env.block_hashes.len) {
-            return .{ .bytes = [_]u8{0} ** 32 };
+            return std.mem.zeroes(evmc.evmc_bytes32);
         }
         return .{ .bytes = vm.env.block_hashes[idx] };
     }
@@ -125,13 +126,15 @@ const EVMOneHost = struct {
     fn get_storage(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
-        dest: [*c]const evmc.evmc_bytes32,
+        k: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.evmc_bytes32 {
-        _ = ctx;
-        _ = dest;
-        _ = addr;
-        @panic("TODO");
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("get_storage addr=0x{} key={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&k.*) });
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        return vm.env.state.getStorage(address, k) orelse std.mem.zeroes(Hash32);
     }
+
     fn set_storage(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
@@ -257,7 +260,7 @@ const EVMOneHost = struct {
             const prev_exec_context = vm.*.env.?.env;
 
             // Create the new context to be used to do the call.
-            vm.env.?.env = ExecutionContext{ .storage_address = util.from_evmc_address(msg.*.recipient) };
+            // vm.env.?.env = ExecutionContext{ .storage_address = util.from_evmc_address(msg.*.recipient) };
 
             // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
             var result = vm.evm.*.execute.?(

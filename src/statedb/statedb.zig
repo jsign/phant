@@ -28,6 +28,11 @@ pub fn getAccount(self: *StateDB, addr: Address) !?AccountState {
     return try self.db.get(addr);
 }
 
+pub fn getStorage(self: *StateDB, addr: Address, key: u256) !u256 {
+    const account = try self.getAccount(addr) orelse return 0;
+    return try account.storage.get(key) orelse 0;
+}
+
 pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: u256) !void {
     var account = try self.getAccount(addr);
     try account.storage.put(key, value);

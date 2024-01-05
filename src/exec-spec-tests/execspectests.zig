@@ -3,14 +3,14 @@ const rlp = @import("rlp");
 const Allocator = std.mem.Allocator;
 const config = @import("../config/config.zig");
 const types = @import("../types/types.zig");
+const vm = @import("../blockchain/vm.zig");
 const Address = types.Address;
 const AccountState = types.AccountState;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const Txn = types.Txn;
-const vm = @import("../blockchain/vm.zig");
 const VM = vm.VM;
-const StateDB = vm.StateDB;
+const StateDB = @import("../statedb/statedb.zig");
 const TxnSigner = @import("../signer/signer.zig").TxnSigner;
 const ecdsa = @import("../crypto/ecdsa.zig");
 const log = std.log.scoped(.execspectests);
@@ -68,8 +68,8 @@ pub const FixtureTest = struct {
             }
             break :blk accounts_state;
         };
-        var db = try StateDB.init(allocator, accounts_state);
-        var evm = VM.init(&db);
+        var statedb = try StateDB.init(allocator, accounts_state);
+        var evm = VM.init(&statedb);
 
         // 2. Execute blocks.
         const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
@@ -94,7 +94,7 @@ pub const FixtureTest = struct {
         while (it.next()) |entry| {
             var exp_account_state: AccountState = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
             std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
-            const got_account_state = try db.getAccount(exp_account_state.addr);
+            const got_account_state = try statedb.getAccount(exp_account_state.addr);
             if (!std.mem.eql(u8, &got_account_state.addr, &exp_account_state.addr)) {
                 return error.post_state_addr_mismatch;
             }

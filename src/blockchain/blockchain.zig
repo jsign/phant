@@ -10,7 +10,7 @@ const Allocator = std.mem.Allocator;
 const LogsBloom = types.LogsBloom;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
-const StateDB = vm.StateDB;
+const StateDB = @import("../statedb/statedb.zig");
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
@@ -221,7 +221,7 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    const Environment = struct {
+    pub const Environment = struct {
         caller: Address,
         block_hashes: [256]Hash32,
         origin: Address,
