@@ -101,10 +101,13 @@ const EVMOneHost = struct {
         };
     }
 
-    fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, xx: i64) callconv(.C) evmc.evmc_bytes32 {
-        _ = xx;
-        _ = ctx;
-        @panic("TODO");
+    fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, block_number: i64) callconv(.C) evmc.evmc_bytes32 {
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const idx = vm.env.number - block_number;
+        if (idx < 0 or idx >= vm.env.block_hashes.len) {
+            return .{ .bytes = [_]u8{0} ** 32 };
+        }
+        return .{ .bytes = vm.env.block_hashes[idx] };
     }
 
     fn account_exists(
