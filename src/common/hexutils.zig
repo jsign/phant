@@ -1,6 +1,6 @@
 const std = @import("std");
 const fmt = std.fmt;
-const types = @import("types.zig");
+const types = @import("../types/types.zig");
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
 

@@ -4,8 +4,8 @@ const ecdsa = @import("crypto/ecdsa.zig");
 const config = @import("config/config.zig");
 const AccountState = types.AccountState;
 const Address = types.Address;
-const VM = @import("vm/vm.zig").VM;
-const StateDB = @import("vm/statedb.zig");
+const VM = @import("blockchain/vm.zig").VM;
+const StateDB = @import("statedb/statedb.zig");
 const Block = types.Block;
 const Txn = types.Txn;
 const TxnSigner = @import("signer/signer.zig").TxnSigner;
@@ -102,10 +102,10 @@ pub fn main() !void {
 test "tests" {
     std.testing.log_level = .debug;
 
-    // TODO: at some point unify entrypoint per package.
+    // TODO: move to separate file for tests binary.
     _ = @import("exec-spec-tests/execspectests.zig");
     _ = @import("types/types.zig");
-    _ = @import("vm/vm.zig");
+    _ = @import("blockchain/vm.zig");
     _ = @import("crypto/ecdsa.zig");
     _ = @import("engine_api/engine_api.zig");
 }

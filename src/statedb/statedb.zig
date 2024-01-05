@@ -1,17 +1,15 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const types = @import("../types/types.zig");
+const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const AccountState = types.AccountState;
-
 const log = std.log.scoped(.statedb);
 
 const StateDB = @This();
-
-const AccountDB = std.AutoHashMap(Address, AccountState);
-
 allocator: Allocator,
 db: AccountDB,
+
+const AccountDB = std.AutoHashMap(Address, AccountState);
 
 pub fn init(allocator: Allocator, accounts_state: []AccountState) !StateDB {
     var db = AccountDB.init(allocator);
@@ -26,14 +24,8 @@ pub fn init(allocator: Allocator, accounts_state: []AccountState) !StateDB {
     };
 }
 
-pub fn getAccount(self: *StateDB, addr: Address) !*AccountState {
-    var res = try self.db.getOrPut(addr);
-    if (res.found_existing) {
-        return res.value_ptr;
-    }
-    res.value_ptr.* = try AccountState.init(self.allocator, addr, 0, 0, &[_]u8{});
-
-    return res.value_ptr;
+pub fn getAccount(self: *StateDB, addr: Address) !?AccountState {
+    return try self.db.get(addr);
 }
 
 pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: u256) !void {

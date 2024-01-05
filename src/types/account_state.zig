@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const util = @import("../util/util.zig");
+const common = @import("../common/common.zig");
 const types = @import("types.zig");
 const Address = types.Address;
 const Bytecode = types.Bytecode;
@@ -45,7 +45,7 @@ pub fn storage_set(self: *AccountState, key: u256, value: u256) !void {
 
 const test_allocator = std.testing.allocator;
 test "storage" {
-    var account = try AccountState.init(test_allocator, util.hex_to_address("0x010142"), 0, 0, &[_]u8{});
+    var account = try AccountState.init(test_allocator, common.hexToAddress("0x010142"), 0, 0, &[_]u8{});
     defer account.deinit();
 
     // Set key=0x42, val=0x43, and check get.
