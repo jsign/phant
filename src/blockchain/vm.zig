@@ -3,6 +3,7 @@ const evmc = @cImport({
 });
 const std = @import("std");
 const types = @import("../types/types.zig");
+const common = @import("../common/common.zig");
 const blockchain = @import("blockchain.zig").Blockchain; // TODO: unnest
 const Allocator = std.mem.Allocator;
 const Environment = blockchain.Environment;
@@ -15,20 +16,23 @@ const Bytecode = types.Bytecode;
 const Hash32 = types.Hash32;
 const Address = types.Address;
 const StateDB = @import("../statedb/statedb.zig");
+const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 const assert = std.debug.assert;
 
-const log = std.log.scoped(.vm);
+const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
 
 pub const VM = struct {
     env: Environment,
     evm: [*c]evmc.evmc_vm,
     host: evmc.struct_evmc_host_interface,
 
+    const vmlog = std.log.scoped(.vm);
+
     // init creates a new EVM VM instance. The caller must call deinit() when done.
     pub fn init(env: Environment) VM {
         var evm = evmc.evmc_create_evmone();
-        log.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
+        vmlog.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
         // TODO: database snapshoting, and (potential) revertion.
         return .{
             .env = env,
@@ -78,7 +82,7 @@ pub const VM = struct {
             .code_address = undefined, // EVMC docs: field not mandatory for depth 0 calls.
         };
         const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
-        log.debug("execution result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
+        vmlog.debug("processMessageCall status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
         return result;
     }
 };
@@ -184,9 +188,15 @@ const EVMOneHost = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
     ) callconv(.C) evmc.evmc_bytes32 {
-        _ = addr;
-        _ = ctx;
-        @panic("TODO");
+        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&addr)});
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address = fromEVMCAddress(addr.*);
+        const ret = empty_hash;
+        if (vm.env.state.getCode(address)) |code| {
+            Keccak256.hash(&ret, code, .{});
+        }
+        return ret;
     }
 
     fn copy_code(

@@ -53,3 +53,9 @@ pub fn hexToAddress(account_hex: []const u8) Address {
     _ = std.fmt.hexToBytes(&address, account_hex_strip) catch unreachable;
     return address;
 }
+
+pub fn comptimeHexToBytes(comptime bytes: []const u8) [bytes.len / 2]u8 {
+    var result: [bytes.len / 2]u8 = undefined;
+    _ = try fmt.hexToBytes(result[0..], bytes);
+    return result;
+}
