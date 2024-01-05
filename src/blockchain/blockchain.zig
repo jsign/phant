@@ -50,27 +50,27 @@ pub const Blockchain = struct {
     allocator: Allocator,
     chain_id: config.ChainId,
     state: *StateDB,
-    last_256_blocks_hashes: [256]Hash32,
-    previous_block: Block,
+    prev_block: BlockHeader,
+    last_256_blocks_hashes: [256]Hash32, // blocks ordered in asc order
 
     pub fn init(
         allocator: Allocator,
         chain_id: config.ChainId,
         state: *StateDB,
-        prev_block_header: BlockHeader,
+        prev_block: BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
     ) void {
         return Blockchain{
             .allocator = allocator,
             .chain_id = chain_id,
             .state = state,
-            .prev_block_header = prev_block_header,
+            .prev_block = prev_block,
             .last_256_blocks_hashes = last_256_blocks_hashes,
         };
     }
 
-    pub fn run_block(self: Blockchain, block: Block) !void {
-        try self.validate_block(self.allocator, block);
+    pub fn runBlock(self: Blockchain, block: Block) !void {
+        try self.validateBlockHeader(self.allocator, self.prev_block, block.header);
         if (block.uncles.len != 0)
             return error.NotEmptyUncles;
 
@@ -93,10 +93,6 @@ pub const Blockchain = struct {
             return error.InvalidLogsBloom;
         if (result.withdrawals_root != block.header.withdrawals_root)
             return error.InvalidWithdrawalsRoot;
-
-        // TODO: do this more efficiently with a circular buffer.
-        std.mem.copyForwards(Hash32, self.last_256_blocks_hashes, self.last_256_blocks_hashes[1..]);
-        self.last_256_blocks_hashes[255] = block.hash();
     }
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
