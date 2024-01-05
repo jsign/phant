@@ -202,16 +202,18 @@ const EVMOneHost = struct {
     fn copy_code(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
-        xxx: usize,
-        xxy: [*c]u8,
-        xxz: usize,
+        code_offset: usize,
+        buffer_data: [*c]u8,
+        buffer_size: usize,
     ) callconv(.C) usize {
-        _ = xxz;
-        _ = xxy;
-        _ = xxx;
-        _ = addr;
-        _ = ctx;
-        @panic("TODO");
+        evmclog.debug("copyCode addr=0x{} code_offset={})", .{ fmtSliceHexLower(&addr), code_offset });
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address = fromEVMCAddress(addr.*);
+        const code = vm.env.state.getCode(address) orelse @panic("copyCode account doesn't exist");
+
+        const copy_len = @min(buffer_size, code.len - code_offset);
+        @memcpy(buffer_data, code[code_offset..][0..copy_len]);
     }
 
     fn self_destruct(
@@ -246,7 +248,7 @@ const EVMOneHost = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
     ) callconv(.C) evmc.enum_evmc_access_status {
-        log.debug("access_account(addr={})", .{fmtSliceHexLower(&addr.*.bytes)});
+        evmclog.debug("access_account(addr={})", .{fmtSliceHexLower(&addr.*.bytes)});
         _ = ctx;
         return evmc.EVMC_ACCESS_COLD;
     }
@@ -264,12 +266,12 @@ const EVMOneHost = struct {
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        log.debug("call depth={d} sender={} recipient={}", .{ msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
+        evmclog.debug("call depth={d} sender={} recipient={}", .{ msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
 
         // Check if the target address is a contract, and do the appropiate call.
         const recipient_account = vm.statedb.getAccount(fromEVMCAddress(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
         if (recipient_account.code.len != 0) {
-            log.debug("contract call, codelen={d}", .{recipient_account.code.len});
+            evmclog.debug("contract call, codelen={d}", .{recipient_account.code.len});
             // Persist the current context. We'll restore it after the call returns.
             const prev_exec_context = vm.*.env.?.env;
 
@@ -286,7 +288,7 @@ const EVMOneHost = struct {
                 recipient_account.code.ptr,
                 recipient_account.code.len,
             );
-            log.debug(
+            evmclog.debug(
                 "internal call exec result: status_code={}, gas_left={}",
                 .{ result.status_code, result.gas_left },
             );
@@ -297,7 +299,7 @@ const EVMOneHost = struct {
             return result;
         }
 
-        log.debug("non-contract call", .{});
+        evmclog.debug("non-contract call", .{});
         // TODO(jsign): verify.
         return evmc.evmc_result{
             .status_code = evmc.EVMC_SUCCESS,
