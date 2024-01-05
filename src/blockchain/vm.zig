@@ -13,7 +13,7 @@ const Block = types.Block;
 const AccountState = types.AccountState;
 const Bytecode = types.Bytecode;
 const Address = types.Address;
-const StateDB = @import("../vm/statedb.zig");
+const StateDB = @import("../statedb/statedb.zig");
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 const assert = std.debug.assert;
 
@@ -84,8 +84,10 @@ pub const VM = struct {
 // EVMOneHost contains the implementation of the EVMC host interface.
 // https://evmc.ethereum.org/structevmc__host__interface.html
 const EVMOneHost = struct {
+    const evmclog = std.log.scoped(.evmone);
+
     fn get_tx_context(ctx: ?*evmc.struct_evmc_host_context) callconv(.C) evmc.struct_evmc_tx_context {
-        log.debug("get_tx_context()", .{});
+        evmclog.debug("get_tx_context", .{});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?))); // TODO: alignCast needed?
         return evmc.struct_evmc_tx_context{
@@ -102,6 +104,8 @@ const EVMOneHost = struct {
     }
 
     fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, block_number: i64) callconv(.C) evmc.evmc_bytes32 {
+        evmclog.debug("get_tx_context block_number={}", .{block_number});
+
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const idx = vm.env.number - block_number;
         if (idx < 0 or idx >= vm.env.block_hashes.len) {
@@ -110,13 +114,12 @@ const EVMOneHost = struct {
         return .{ .bytes = vm.env.block_hashes[idx] };
     }
 
-    fn account_exists(
-        ctx: ?*evmc.struct_evmc_host_context,
-        addr: [*c]const evmc.evmc_address,
-    ) callconv(.C) bool {
-        _ = addr;
-        _ = ctx;
-        @panic("TODO");
+    fn account_exists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) bool {
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("account_exists addr=0x{}", .{fmtSliceHexLower(&address)});
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        return try vm.env.state.getAccount() != null;
     }
 
     fn get_storage(
