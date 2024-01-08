@@ -5,6 +5,8 @@ const Address = types.Address;
 const AccountState = types.AccountState;
 const log = std.log.scoped(.statedb);
 
+// TODO: create container.
+
 const StateDB = @This();
 allocator: Allocator,
 db: AccountDB,
@@ -25,33 +27,35 @@ pub fn init(allocator: Allocator, accounts_state: []AccountState) !StateDB {
 }
 
 // TODO: return a more focused parameter (balance, code, nonce)
-pub fn getAccount(self: *StateDB, addr: Address) !?AccountState {
-    return try self.db.get(addr);
+pub fn getAccount(self: *StateDB, addr: Address) ?AccountState {
+    return self.db.get(addr);
 }
 
 pub fn getStorage(self: *StateDB, addr: Address, key: u256) !u256 {
-    const account = try self.getAccount(addr) orelse return 0;
+    const account = self.getAccount(addr) orelse return 0;
     return try account.storage.get(key) orelse 0;
 }
 
 pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: u256) !void {
-    var account = try self.getAccount(addr) orelse return error.AccountDoesNotExist;
+    var account = self.getAccount(addr) orelse return error.AccountDoesNotExist;
     try account.storage.put(key, value);
 }
 
 pub fn setBalance(self: *StateDB, addr: Address, balance: u256) !void {
-    var account = try self.getAccount(addr);
-    account.balance = balance;
+    var account = self.db.getPtr(addr);
+    if (account) |acc| {
+        acc.balance = balance;
+        return;
+    }
+    try self.db.put(try AccountState.init(self.allocator, addr, 0, balance, &[_]u8{}));
 }
 
 pub fn incrementNonce(self: *StateDB, addr: Address) !void {
-    var account = try self.getAccount(addr);
+    var account = try self.getAccount(addr) orelse return error.AccountDoesNotExist;
     account.nonce += 1;
 }
 
-pub fn getCode(self: *StateDB, addr: Address) !?[]const u8 {
-    var account = try self.getAccount(addr) orelse return null;
+pub fn getCode(self: *StateDB, addr: Address) []const u8 {
+    var account = self.getAccount(addr) orelse &[_]u8{};
     return account.code;
 }
-
-// TODO: tests.

@@ -1,3 +1,4 @@
+// TODO(pre-review): check usage of all imports.
 const evmc = @cImport({
     @cInclude("evmone.h");
 });
@@ -23,6 +24,7 @@ const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 const assert = std.debug.assert;
 
+const STACK_DEPTH_LIMIT = 1024;
 const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
 
 pub const VM = struct {
@@ -60,7 +62,7 @@ pub const VM = struct {
                 .access_storage = EVMOneHost.access_storage,
             },
             // TODO: remove this and move it to a "VM instance" or similar which has a
-            // context containing these things.
+            // context containing these things, and probably also the (snapshoted) statedb.
             .accessed_accounts = undefined,
             .accessed_storage_keys = undefined,
         };
@@ -77,7 +79,7 @@ pub const VM = struct {
         const kind = if (msg.target) evmc.EVMC_CALL orelse evmc.EVMC_CREATE;
         const evmc_message = evmc.struct_evmc_message{
             .kind = kind,
-            .flags = evmc.EVMC_STATIC,
+            .flags = 0,
             .depth = 0,
             .gas = @intCast(msg.gas),
             .recipient = toEVMCAddress(msg.current_target),
@@ -294,56 +296,80 @@ const EVMOneHost = struct {
     }
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
+        evmclog.debug("call() kind={} depth={d} sender={} recipient={}", .{ msg.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
+
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        evmclog.debug("call depth={d} sender={} recipient={}", .{ msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
 
-        // Check if the target address is a contract, and do the appropiate call.
-        const recipient_account = vm.statedb.getAccount(fromEVMCAddress(msg.*.code_address)) catch unreachable; // TODO(jsign): fix this.
-        if (recipient_account.code.len != 0) {
-            evmclog.debug("contract call, codelen={d}", .{recipient_account.code.len});
-            // Persist the current context. We'll restore it after the call returns.
-            const prev_exec_context = vm.*.env.?.env;
-
-            // Create the new context to be used to do the call.
-            // TODO: Snapshot
-            // TODO: self destruct?
-            // TODO: access accounts
-            // TODO: accessed_storage_keys
-            // TODO: vm.env.?.env = ExecutionContext{ .storage_address = util.from_evmc_address(msg.*.recipient) };
-
-            // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
-            var result = vm.evm.*.execute.?(
-                vm.evm,
-                @ptrCast(&vm.host),
-                @ptrCast(vm),
-                evmc.EVMC_SHANGHAI,
-                msg,
-                recipient_account.code.ptr,
-                recipient_account.code.len,
-            );
-            evmclog.debug(
-                "internal call exec result: status_code={}, gas_left={}",
-                .{ result.status_code, result.gas_left },
-            );
-
-            // Restore previous context after call() returned.
-            vm.env.?.env = prev_exec_context;
-
-            return result;
+        if (msg.depth > STACK_DEPTH_LIMIT) {
+            return .{
+                .status_code = evmc.EVMC_CALL_DEPTH_EXCEEDED,
+                .gas_left = 0,
+                .gas_refund = 0,
+                .output_data = null,
+                .output_size = 0,
+                .release = null,
+                .create_address = std.mem.zeroes(evmc.struct_evmc_address),
+                .padding = [_]u9{0} ** 4,
+            };
         }
 
-        evmclog.debug("non-contract call", .{});
-        // TODO(jsign): verify.
-        return evmc.evmc_result{
-            .status_code = evmc.EVMC_SUCCESS,
-            .gas_left = msg.*.gas, // TODO: fix
-            .gas_refund = 0,
-            .output_data = null,
-            .output_size = 0,
-            .release = null,
-            .create_address = std.mem.zeroes(evmc.evmc_address),
-            .padding = [_]u8{0} ** 4,
-        };
+        // Save current context.
+        const prev_accessed_accounts = vm.accessed_accounts;
+        const prev_accessed_storage_keys = vm.accessed_storage_keys;
+        const prev_statedb = vm.env.state;
+
+        // Create new call context.
+        vm.accessed_accounts = vm.accessed_accounts.clone();
+        defer vm.accessed_accounts.deinit();
+        vm.accessed_storage_keys = vm.accessed_storage_keys.clone();
+        defer vm.accessed_storage_keys.deinit();
+        vm.env.state = vm.env.state.clone();
+        defer vm.env.state.deinit();
+
+        // Send value.
+        if (msg.value.bytes != [_]u8{0} ** 32) {
+            const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
+
+            const sender = toEVMCAddress(msg.sender);
+            const sender_balance = if (vm.env.state.getAccount(sender)) |acc| acc.balance else 0;
+            if (sender_balance < value) {
+                return .{
+                    .status_code = evmc.EVMC_INSUFFICIENT_BALANCE,
+                    .gas_left = 0,
+                    .gas_refund = 0,
+                    .output_data = null,
+                    .output_size = 0,
+                    .release = null,
+                    .create_address = std.mem.zeroes(evmc.struct_evmc_address),
+                    .padding = [_]u9{0} ** 4,
+                };
+            }
+            vm.env.state.setBalance(sender, sender_balance - value) catch @panic("OOO");
+            const receipient_balance = if (vm.env.state.getAccount(toEVMCAddress(msg.recipient))) |acc| acc.balance else 0;
+            vm.env.state.setBalance(sender, receipient_balance + value) catch @panic("OOO");
+        }
+        const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
+        _ = value;
+
+        const code_address = toEVMCAddress(msg.code_address);
+        const code = vm.env.state.getCode(code_address);
+        var result = vm.evm.*.execute.?(
+            vm.evm,
+            @ptrCast(&vm.host),
+            @ptrCast(vm),
+            evmc.EVMC_SHANGHAI, // TODO: generalize from block_number.
+            msg,
+            code.code.ptr,
+            code.code.len,
+        );
+        evmclog.debug("internal call exec result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
+
+        // Restore previous context.
+        vm.accessed_accounts = prev_accessed_accounts;
+        vm.accessed_storage_keys = prev_accessed_storage_keys;
+        vm.env.state = prev_statedb;
+
+        return result;
     }
 };
 
