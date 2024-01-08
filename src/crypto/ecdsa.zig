@@ -1,6 +1,6 @@
 const std = @import("std");
 const secp256k1 = @import("zig-eth-secp256k1");
-
+const common = @import("../common/common.zig");
 pub const Signature = [65]u8;
 pub const Message = [32]u8;
 pub const PrivateKey = [32]u8;
@@ -26,25 +26,14 @@ pub const Signer = struct {
 };
 
 // The following test values where generated using geth, as a reference.
-const hashed_msg = hexToBytes("0x05e0e0ff09b01e5626daac3165b82afa42be29197b82e8a5a8800740ee7519d2");
-const private_key = hexToBytes("0xf457cd3bd0186e342d243ea40ad78fe8e81743f90852e87074e68d8c94c2a42e");
-const signature = hexToBytes("0x5a62891eb3e26f3a2344f93a7bad7fe5e670dc45cbdbf0e5bbdba4399238b5e6614caf592f96ee273a2bf018a976e7bf4b63777f9e53ce819d96c5035611400600");
-const uncompressed_pubkey = hexToBytes("0x04682bade67348db99074fcaaffef29394192e7e227a2bdb49f930c74358060c6a42df70f7ef8aadd94854abe646e047142fad42811e325afbec4753342d630b1e");
-const compressed_pubkey = hexToBytes("0x02682bade67348db99074fcaaffef29394192e7e227a2bdb49f930c74358060c6a");
+const hashed_msg = common.comptimeHexToBytes("0x05e0e0ff09b01e5626daac3165b82afa42be29197b82e8a5a8800740ee7519d2");
+const private_key = common.comptimeHexToBytes("0xf457cd3bd0186e342d243ea40ad78fe8e81743f90852e87074e68d8c94c2a42e");
+const signature = common.comptimeHexToBytes("0x5a62891eb3e26f3a2344f93a7bad7fe5e670dc45cbdbf0e5bbdba4399238b5e6614caf592f96ee273a2bf018a976e7bf4b63777f9e53ce819d96c5035611400600");
+const uncompressed_pubkey = common.comptimeHexToBytes("0x04682bade67348db99074fcaaffef29394192e7e227a2bdb49f930c74358060c6a42df70f7ef8aadd94854abe646e047142fad42811e325afbec4753342d630b1e");
+const compressed_pubkey = common.comptimeHexToBytes("0x02682bade67348db99074fcaaffef29394192e7e227a2bdb49f930c74358060c6a");
 
 test "erecover" {
     const signer = try Signer.init();
     const got_pubkey = try signer.erecover(signature, hashed_msg);
     try std.testing.expectEqual(uncompressed_pubkey, got_pubkey);
-}
-
-// TODO: must to hexutils when a current PR gets merged.
-fn hexToBytes(comptime hex: []const u8) [hex.len / 2 - if (std.mem.startsWith(u8, hex, "0x")) 1 else 0]u8 {
-    var target = hex;
-    if (std.mem.startsWith(u8, hex, "0x")) {
-        target = hex[2..];
-    }
-    var ret: [target.len / 2]u8 = undefined;
-    _ = std.fmt.hexToBytes(&ret, target) catch unreachable;
-    return ret;
 }

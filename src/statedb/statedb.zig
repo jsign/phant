@@ -54,4 +54,4 @@ pub fn getCode(self: *StateDB, addr: Address) !?[]const u8 {
     return account.code;
 }
 
-// TODO: get tests.
+// TODO: tests.

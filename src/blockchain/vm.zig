@@ -6,6 +6,9 @@ const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
 const blockchain = @import("blockchain.zig").Blockchain; // TODO: unnest
 const Allocator = std.mem.Allocator;
+const AddressSet = common.AddressSet;
+const AddressKey = common.AddressKey;
+const AddressKeySet = common.AddressKeySet;
 const Environment = blockchain.Environment;
 const Message = blockchain.Message;
 const Txn = types.Txn;
@@ -27,13 +30,16 @@ pub const VM = struct {
     evm: [*c]evmc.evmc_vm,
     host: evmc.struct_evmc_host_interface,
 
+    // Call context scoped variables.
+    accessed_accounts: AddressSet,
+    accessed_storage_keys: AddressKeySet,
+
     const vmlog = std.log.scoped(.vm);
 
     // init creates a new EVM VM instance. The caller must call deinit() when done.
     pub fn init(env: Environment) VM {
         var evm = evmc.evmc_create_evmone();
         vmlog.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
-        // TODO: database snapshoting, and (potential) revertion.
         return .{
             .env = env,
             .evm = evm,
@@ -53,6 +59,10 @@ pub const VM = struct {
                 .access_account = EVMOneHost.access_account,
                 .access_storage = EVMOneHost.access_storage,
             },
+            // TODO: remove this and move it to a "VM instance" or similar which has a
+            // context containing these things.
+            .accessed_accounts = undefined,
+            .accessed_storage_keys = undefined,
         };
     }
 
@@ -62,7 +72,8 @@ pub const VM = struct {
         self.evm = undefined;
     }
 
-    pub fn processMessageCall(self: *VM, msg: Message) !evmc.struct_evmc_result {
+    // processMessageCall executes a message call.
+    pub fn processMessageCall(self: *VM, msg: Message, allocator: Allocator) !evmc.struct_evmc_result {
         const kind = if (msg.target) evmc.EVMC_CALL orelse evmc.EVMC_CREATE;
         const evmc_message = evmc.struct_evmc_message{
             .kind = kind,
@@ -81,6 +92,16 @@ pub const VM = struct {
             .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind.
             .code_address = undefined, // EVMC docs: field not mandatory for depth 0 calls.
         };
+
+        // TODO(improv): we clone here since it's the easiest way to manage ownership of the sets.
+        // Quite honestly, it will be better to avoid creating the sets at the caller level and do it here
+        // which would make the ownership problem disappear and avoid the clone. It's a very cheap
+        // clone, but also is simple to avoid it.
+        self.accessed_accounts = msg.accessed_addresses.cloneWithAllocator(allocator);
+        defer self.accessed_accounts.deinit();
+        self.accessed_storage_keys = msg.accessed_storage_keys.cloneWithAllocator(allocator);
+        defer self.accessed_storage_keys.deinit();
+
         const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
         vmlog.debug("processMessageCall status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
         return result;
@@ -224,7 +245,8 @@ const EVMOneHost = struct {
         _ = addr2;
         _ = addr;
         _ = ctx;
-        @panic("TODO");
+        // https://evmc.ethereum.org/group__EVMC.html#ga1aa9fa657b3f0de375e2f07e53b65bcc
+        @panic("self destruct not supported in verkle");
     }
 
     fn emit_log(
@@ -241,27 +263,34 @@ const EVMOneHost = struct {
         _ = xxx;
         _ = addr;
         _ = ctx;
+        // https://evmc.ethereum.org/group__EVMC.html#gaab96621b67d653758b3da15c2b596938
         @panic("TODO");
     }
 
-    fn access_account(
-        ctx: ?*evmc.struct_evmc_host_context,
-        addr: [*c]const evmc.evmc_address,
-    ) callconv(.C) evmc.enum_evmc_access_status {
-        evmclog.debug("access_account(addr={})", .{fmtSliceHexLower(&addr.*.bytes)});
-        _ = ctx;
+    fn access_account(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.enum_evmc_access_status {
+        evmclog.debug("accessAccount addr=0x{}", .{fmtSliceHexLower(&addr)});
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address = fromEVMCAddress(addr);
+        if (vm.accessed_accounts.contains(address))
+            return evmc.EVMC_ACCESS_WARM;
+        try vm.accessed_accounts.fetchPut(address, null);
         return evmc.EVMC_ACCESS_COLD;
     }
 
     fn access_storage(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
-        value: [*c]const evmc.evmc_bytes32,
+        key: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.enum_evmc_access_status {
-        _ = value;
-        _ = addr;
-        _ = ctx;
-        return evmc.EVMC_ACCESS_COLD; // TODO(jsign): fix
+        evmclog.debug("accessStorage addr=0x{} key=0x{}", .{ fmtSliceHexLower(addr), fmtSliceHexLower(key) });
+
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address_key: AddressKey = .{ .address = fromEVMCAddress(addr), .key = key.*.bytes };
+        if (vm.accessed_accounts.contains(address_key))
+            return evmc.EVMC_ACCESS_WARM;
+        try vm.accessed_accounts.fetchPut(address_key, null);
+        return evmc.EVMC_ACCESS_COLD;
     }
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
@@ -276,7 +305,11 @@ const EVMOneHost = struct {
             const prev_exec_context = vm.*.env.?.env;
 
             // Create the new context to be used to do the call.
-            // vm.env.?.env = ExecutionContext{ .storage_address = util.from_evmc_address(msg.*.recipient) };
+            // TODO: Snapshot
+            // TODO: self destruct?
+            // TODO: access accounts
+            // TODO: accessed_storage_keys
+            // TODO: vm.env.?.env = ExecutionContext{ .storage_address = util.from_evmc_address(msg.*.recipient) };
 
             // TODO(jsign): EVMC_SHANGHAI should be configurable at runtime.
             var result = vm.evm.*.execute.?(

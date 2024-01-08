@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
+const common = @import("../common/common.zig");
 const blocks = @import("../types/block.zig");
 const config = @import("../config/config.zig");
 const transaction = @import("../types/transaction.zig");
@@ -7,6 +8,9 @@ const vm = @import("vm.zig");
 const rlp = @import("zig-rlp");
 const signer = @import("../signer/signer.zig");
 const Allocator = std.mem.Allocator;
+const AddressSet = common.AddressSet;
+const AddresssKey = common.AddressKey;
+const AddressKeySet = common.AddressKeySet;
 const LogsBloom = types.LogsBloom;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
@@ -236,10 +240,6 @@ pub const Blockchain = struct {
         chain_id: config.ChainId,
     };
 
-    const AddressSet = std.HashMap(Address, void);
-    const AddressKeyTuple = struct { address: Address, key: Bytes32 };
-    const AddressKeySet = std.HashMap(AddressKeyTuple, void);
-
     fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Txn) !struct { gas_left: u64 } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
@@ -280,7 +280,7 @@ pub const Blockchain = struct {
             },
         }
 
-        const message = prepareMessage(
+        const message = try prepareMessage(
             sender,
             tx.getTo(),
             tx.getValue(),
@@ -290,6 +290,7 @@ pub const Blockchain = struct {
             preaccessed_addresses,
             preaccessed_stoarge_keys,
         );
+        defer message.deinit();
         const output = processMessageCall(message, env);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
@@ -447,7 +448,6 @@ pub const Blockchain = struct {
         refund_counter: u256,
         // logs: Union[Tuple[()], Tuple[Log, ...]] TODO
         // accounts_to_delete: AddressKeySet, // TODO (delete?)
-        // touched_accounts: AddressKeySet, // TODO (delete?)
         // error: Optional[Exception] TODO
     };
 
@@ -461,7 +461,6 @@ pub const Blockchain = struct {
             .gas_left = result.gas_left,
             .refund_counter = result.gas_refund,
             // .accounts_to_delete = AddressKeySet,
-            // .touched_accounts = vm_instance.touched_accounts,
         };
     }
 };
