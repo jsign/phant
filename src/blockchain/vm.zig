@@ -323,7 +323,7 @@ const EVMOneHost = struct {
         defer vm.accessed_accounts.deinit();
         vm.accessed_storage_keys = vm.accessed_storage_keys.clone();
         defer vm.accessed_storage_keys.deinit();
-        vm.env.state = vm.env.state.clone();
+        vm.env.state = vm.env.state.snapshot();
         defer vm.env.state.deinit();
 
         // Send value.
@@ -364,10 +364,12 @@ const EVMOneHost = struct {
         );
         evmclog.debug("internal call exec result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
 
-        // Restore previous context.
-        vm.accessed_accounts = prev_accessed_accounts;
-        vm.accessed_storage_keys = prev_accessed_storage_keys;
-        vm.env.state = prev_statedb;
+        if (result.status_code != evmc.EVMC_SUCCESS) {
+            // Restore previous context.
+            vm.accessed_accounts = prev_accessed_accounts;
+            vm.accessed_storage_keys = prev_accessed_storage_keys;
+            vm.env.state = prev_statedb;
+        }
 
         return result;
     }

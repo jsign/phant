@@ -59,3 +59,12 @@ pub fn getCode(self: *StateDB, addr: Address) []const u8 {
     var account = self.getAccount(addr) orelse &[_]u8{};
     return account.code;
 }
+
+pub fn snapshot(self: StateDB) StateDB {
+    // TODO: while simple this is quite inefficient.
+    // A much smarter way is doing some "diff" style snapshotting or similar.
+    return StateDB{
+        .allocator = self.allocator,
+        .db = self.db.cloneWithAllocator(self.allocator),
+    };
+}
