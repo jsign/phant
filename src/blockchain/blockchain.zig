@@ -54,16 +54,16 @@ pub const Blockchain = struct {
     allocator: Allocator,
     chain_id: config.ChainId,
     state: *StateDB,
-    prev_block: BlockHeader,
+    prev_block: ?BlockHeader,
     last_256_blocks_hashes: [256]Hash32, // blocks ordered in asc order
 
     pub fn init(
         allocator: Allocator,
         chain_id: config.ChainId,
         state: *StateDB,
-        prev_block: BlockHeader,
+        prev_block: ?BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
-    ) void {
+    ) Blockchain {
         return Blockchain{
             .allocator = allocator,
             .chain_id = chain_id,
@@ -74,15 +74,16 @@ pub const Blockchain = struct {
     }
 
     pub fn runBlock(self: Blockchain, block: Block) !void {
-        try self.validateBlockHeader(self.allocator, self.prev_block, block.header);
+        try validateBlockHeader(self.allocator, self.prev_block, block.header);
         if (block.uncles.len != 0)
             return error.NotEmptyUncles;
 
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
+        const allocator = arena.allocator();
 
         // Execute block.
-        var result = try applyBody(arena, self, block, self.state);
+        var result = try applyBody(allocator, self, self.state, block);
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used)
@@ -101,51 +102,57 @@ pub const Blockchain = struct {
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
     // If isn't valid, it returns an error.
-    fn validateBlockHeader(allocator: Allocator, prev_block: BlockHeader, curr_block: BlockHeader) !void {
-        try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
+    fn validateBlockHeader(allocator: Allocator, parent_block: ?BlockHeader, curr_block: BlockHeader) !void {
+        if (parent_block) |prev_block| {
+            try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
+        }
         if (curr_block.gas_used > curr_block.gas_limit)
             return error.GasLimitExceeded;
 
         // Check base fee.
-        const parent_gas_target = prev_block.gas_limit / ELASTICITY_MULTIPLIER;
-        var expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
-            prev_block.base_fee_per_gas
-        else if (prev_block.gas_used > parent_gas_target) blk: {
-            const gas_used_delta = prev_block.gas_used - parent_gas_target;
-            const base_fee_per_gas_delta = @max(prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR, 1);
-            break :blk prev_block.base_fee_per_gas + base_fee_per_gas_delta;
-        } else blk: {
-            const gas_used_delta = parent_gas_target - prev_block.gas_used;
-            const base_fee_per_gas_delta = prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR;
-            break :blk prev_block.base_fee_per_gas - base_fee_per_gas_delta;
-        };
-        if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
-            return error.InvalidBaseFee;
+        if (parent_block) |prev_block| {
+            const parent_gas_target = prev_block.gas_limit / ELASTICITY_MULTIPLIER;
+            var expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
+                prev_block.base_fee_per_gas
+            else if (prev_block.gas_used > parent_gas_target) blk: {
+                const gas_used_delta = prev_block.gas_used - parent_gas_target;
+                const base_fee_per_gas_delta = @max(prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR, 1);
+                break :blk prev_block.base_fee_per_gas + base_fee_per_gas_delta;
+            } else blk: {
+                const gas_used_delta = parent_gas_target - prev_block.gas_used;
+                const base_fee_per_gas_delta = prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR;
+                break :blk prev_block.base_fee_per_gas - base_fee_per_gas_delta;
+            };
+            if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
+                return error.InvalidBaseFee;
 
-        if (curr_block.timestamp > prev_block.timestamp)
-            return error.InvalidTimestamp;
-        if (curr_block.block_number != prev_block.block_number + 1)
-            return error.InvalidBlockNumber;
+            if (curr_block.timestamp > prev_block.timestamp)
+                return error.InvalidTimestamp;
+            if (curr_block.block_number != prev_block.block_number + 1)
+                return error.InvalidBlockNumber;
+        }
         if (curr_block.extra_data.len > 32)
             return error.ExtraDataTooLong;
 
         if (curr_block.difficulty != 0)
             return error.InvalidDifficulty;
-        if (curr_block.nonce == [_]u8{0} ** 8)
+        if (std.mem.eql(u8, &curr_block.nonce, &[_]u8{0} ** 8))
             return error.InvalidNonce;
-        if (curr_block.ommers_hash != blocks.empty_uncle_hash)
-            return error.InvalidOmmersHash;
+        if (!std.mem.eql(u8, &curr_block.uncle_hash, &blocks.empty_uncle_hash))
+            return error.InvalidUnclesHash;
 
-        const prev_block_hash = transaction.RLPHash(BlockHeader, allocator, prev_block, null);
-        if (curr_block.parent_hash != prev_block_hash)
-            return error.InvalidParentHash;
+        if (parent_block) |prev_block| {
+            const prev_block_hash = try transaction.RLPHash(BlockHeader, allocator, prev_block, null);
+            if (!std.mem.eql(u8, &curr_block.parent_hash, &prev_block_hash))
+                return error.InvalidParentHash;
+        }
     }
 
     fn checkGasLimit(gas_limit: u256, parent_gas_limit: u256) !void {
         const max_delta = parent_gas_limit / GAS_LIMIT_ADJUSTMENT_FACTOR;
         if (gas_limit >= parent_gas_limit + max_delta) return error.GasLimitTooHigh;
         if (gas_limit <= parent_gas_limit - max_delta) return error.GasLimitTooLow;
-        return gas_limit >= GAS_LIMIT_MINIMUM;
+        if (gas_limit >= GAS_LIMIT_MINIMUM) return error.GasLimitLessThanMinimum;
     }
 
     const BlockExecutionResult = struct {
@@ -156,13 +163,13 @@ pub const Blockchain = struct {
         withdrawals_root: Hash32,
     };
 
-    fn applyBody(allocator: Allocator, chain: Blockchain, state: StateDB, block: Block) !BlockExecutionResult {
+    fn applyBody(allocator: Allocator, chain: Blockchain, state: *StateDB, block: Block) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
             // TODO: add tx to txs tree.
 
-            const txn_info = checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
-            const env = vm.Environment{
+            const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
+            const env: Environment = .{
                 .caller = txn_info.sender_address,
                 .origin = txn_info.sender_address,
                 .block_hashes = chain.last_256_blocks_hashes,
@@ -199,12 +206,12 @@ pub const Blockchain = struct {
         };
     }
 
-    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u64, gas_available: u64, chain_id: u64) !struct { sender_address: Address, effective_gas_price: config.ChainId } {
+    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u256, gas_available: u64, chain_id: config.ChainId) !struct { sender_address: Address, effective_gas_price: u256 } {
         if (tx.getGasLimit() > gas_available)
             return error.InsufficientGas;
 
         const txn_signer = try signer.TxnSigner.init(@intFromEnum(chain_id));
-        const sender_address = txn_signer.get_sender(allocator, tx);
+        const sender_address = try txn_signer.get_sender(allocator, tx);
 
         const effective_gas_price = switch (tx) {
             .FeeMarketTxn => |fm_tx| blk: {
@@ -213,7 +220,7 @@ pub const Blockchain = struct {
                 if (fm_tx.max_fee_per_gas < base_fee_per_gas)
                     return error.MaxFeePerGasLowerThanBaseFee;
 
-                const priority_fee_per_gas = @min(tx.max_priority_fee_per_gas, tx.max_fee_per_gas - base_fee_per_gas);
+                const priority_fee_per_gas = @min(fm_tx.max_priority_fee_per_gas, fm_tx.max_fee_per_gas - base_fee_per_gas);
                 break :blk priority_fee_per_gas + base_fee_per_gas;
             },
             .LegacyTxn, .AccessListTxn => blk: {
@@ -233,7 +240,7 @@ pub const Blockchain = struct {
         number: u64,
         base_fee_per_gas: u256,
         gas_limit: u64,
-        gas_price: u64,
+        gas_price: u256,
         time: u256,
         prev_randao: Bytes32,
         state: *StateDB,

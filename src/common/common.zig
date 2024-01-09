@@ -8,7 +8,7 @@ pub const prefixedhex2u64 = hexutils.prefixedhex2u64;
 pub const hexToAddress = hexutils.hexToAddress;
 pub const comptimeHexToBytes = hexutils.comptimeHexToBytes;
 
-pub const AddressSet = std.HashMap(types.Address, void);
+pub const AddressSet = std.AutoHashMap(types.Address, void);
 
 pub const AddressKey = struct { address: types.Address, key: types.Bytes32 };
-pub const AddressKeySet = std.HashMap(AddressKey, void);
+pub const AddressKeySet = std.AutoHashMap(AddressKey, void);

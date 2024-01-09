@@ -107,7 +107,7 @@ pub const TxnSigner = struct {
                     chain_id: u64,
                     nonce: u256,
                     max_priority_fee_per_gas: u64,
-                    max_fee_per_gas: u64,
+                    max_fee_per_gas: u256,
                     gas: u64,
                     to: ?Address,
                     value: u256,

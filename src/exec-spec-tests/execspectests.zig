@@ -1,18 +1,20 @@
 const std = @import("std");
 const rlp = @import("rlp");
-const Allocator = std.mem.Allocator;
 const config = @import("../config/config.zig");
 const types = @import("../types/types.zig");
+const blockchain = @import("../blockchain/blockchain.zig");
 const vm = @import("../blockchain/vm.zig");
+const ecdsa = @import("../crypto/ecdsa.zig");
+const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const AccountState = types.AccountState;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const Txn = types.Txn;
+const Hash32 = types.Hash32;
 const VM = vm.VM;
 const StateDB = @import("../statedb/statedb.zig");
 const TxnSigner = @import("../signer/signer.zig").TxnSigner;
-const ecdsa = @import("../crypto/ecdsa.zig");
 const log = std.log.scoped(.execspectests);
 
 const HexString = []const u8;
@@ -21,10 +23,10 @@ pub const Fixture = struct {
     const FixtureType = std.json.ArrayHashMap(FixtureTest);
     tests: std.json.Parsed(FixtureType),
 
-    pub fn new_from_bytes(allocator: Allocator, bytes: []const u8) !Fixture {
+    pub fn newFromBytes(allocator: Allocator, bytes: []const u8) !Fixture {
         const tests = try std.json.parseFromSlice(FixtureType, allocator, bytes, std.json.ParseOptions{ .ignore_unknown_fields = true, .allocate = std.json.AllocWhen.alloc_always });
 
-        return Fixture{ .tests = tests };
+        return .{ .tests = tests };
     }
 
     pub fn deinit(self: *Fixture) void {
@@ -69,7 +71,6 @@ pub const FixtureTest = struct {
             break :blk accounts_state;
         };
         var statedb = try StateDB.init(allocator, accounts_state);
-        var evm = VM.init(&statedb);
 
         // 2. Execute blocks.
         const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
@@ -86,7 +87,8 @@ pub const FixtureTest = struct {
                 txns[i] = try tx_hex.to_vm_transaction(allocator, txn_signer);
             }
 
-            try evm.run_block(allocator, txn_signer, block, txns);
+            var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, null, std.mem.zeroes([256]Hash32));
+            try chain.runBlock(block);
         }
 
         // 3. Verify that the post state matches what the fixture `postState` claims is true.
@@ -216,7 +218,7 @@ const AccountStorageHex = std.json.ArrayHashMap(HexString);
 
 var test_allocator = std.testing.allocator;
 test "execution-spec-tests" {
-    var ft = try Fixture.new_from_bytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
+    var ft = try Fixture.newFromBytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
