@@ -13,7 +13,7 @@ const BlockHeader = types.BlockHeader;
 const Txn = types.Txn;
 const Hash32 = types.Hash32;
 const VM = vm.VM;
-const StateDB = @import("../statedb/statedb.zig");
+const StateDB = @import("../statedb/statedb.zig").StateDB;
 const TxnSigner = @import("../signer/signer.zig").TxnSigner;
 const log = std.log.scoped(.execspectests);
 
@@ -96,21 +96,21 @@ pub const FixtureTest = struct {
         while (it.next()) |entry| {
             var exp_account_state: AccountState = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
             std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
-            const got_account_state = try statedb.getAccount(exp_account_state.addr);
-            if (!std.mem.eql(u8, &got_account_state.addr, &exp_account_state.addr)) {
-                return error.post_state_addr_mismatch;
-            }
+            const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
                 log.err("expected nonce {d} but got {d}", .{ exp_account_state.nonce, got_account_state.nonce });
-                return error.post_state_nonce_mismatch;
+                return error.PostStateNonceMismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
                 log.err("expected balance {d} but got {d}", .{ exp_account_state.balance, got_account_state.balance });
-                return error.post_state_balance_mismatch;
+                return error.PostStateBalanceMismatch;
             }
-            if (got_account_state.storage.count() != exp_account_state.storage.count()) {
-                return error.post_state_storage_size_mismatch;
+
+            const got_storage = statedb.getAllStorage(exp_account_state.addr) orelse return error.PostStateAccountMustExist;
+            if (got_storage.count() != exp_account_state.storage.count()) {
+                return error.PostStateStorageCountMismatch;
             }
+            // TODO: check each storage entry matches.
         }
         // TODO(jsign): verify gas used.
 
@@ -189,7 +189,7 @@ pub const AccountStateHex = struct {
     // TODO(jsign): add init() and add assertions about lengths.
 
     pub fn to_vm_accountstate(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
-        const nonce = try std.fmt.parseInt(u256, self.nonce[2..], 16);
+        const nonce = try std.fmt.parseInt(u64, self.nonce[2..], 16);
         const balance = try std.fmt.parseInt(u256, self.balance[2..], 16);
 
         var code = try allocator.alloc(u8, self.code[2..].len / 2);

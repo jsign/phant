@@ -75,10 +75,9 @@ pub const VM = struct {
     }
 
     // processMessageCall executes a message call.
-    pub fn processMessageCall(self: *VM, msg: Message, allocator: Allocator) !evmc.struct_evmc_result {
-        const kind = if (msg.target) evmc.EVMC_CALL orelse evmc.EVMC_CREATE;
-        const evmc_message = evmc.struct_evmc_message{
-            .kind = kind,
+    pub fn processMessageCall(self: *VM, allocator: Allocator, msg: Message) !evmc.struct_evmc_result {
+        const evmc_message: evmc.struct_evmc_message = .{
+            .kind = if (msg.target != null) evmc.EVMC_CALL else evmc.EVMC_CREATE,
             .flags = 0,
             .depth = 0,
             .gas = @intCast(msg.gas),
@@ -99,9 +98,9 @@ pub const VM = struct {
         // Quite honestly, it will be better to avoid creating the sets at the caller level and do it here
         // which would make the ownership problem disappear and avoid the clone. It's a very cheap
         // clone, but also is simple to avoid it.
-        self.accessed_accounts = msg.accessed_addresses.cloneWithAllocator(allocator);
+        self.accessed_accounts = try msg.accessed_addresses.cloneWithAllocator(allocator);
         defer self.accessed_accounts.deinit();
-        self.accessed_storage_keys = msg.accessed_storage_keys.cloneWithAllocator(allocator);
+        self.accessed_storage_keys = try msg.accessed_storage_keys.cloneWithAllocator(allocator);
         defer self.accessed_storage_keys.deinit();
 
         const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
@@ -270,13 +269,14 @@ const EVMOneHost = struct {
     }
 
     fn access_account(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.enum_evmc_access_status {
-        evmclog.debug("accessAccount addr=0x{}", .{fmtSliceHexLower(&addr)});
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("accessAccount addr=0x{}", .{fmtSliceHexLower(&address)});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address = fromEVMCAddress(addr);
         if (vm.accessed_accounts.contains(address))
             return evmc.EVMC_ACCESS_WARM;
-        try vm.accessed_accounts.fetchPut(address, null);
+        _ = vm.accessed_accounts.fetchPut(address, {}) catch @panic("OOO");
+
         return evmc.EVMC_ACCESS_COLD;
     }
 
@@ -285,18 +285,20 @@ const EVMOneHost = struct {
         addr: [*c]const evmc.evmc_address,
         key: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.enum_evmc_access_status {
-        evmclog.debug("accessStorage addr=0x{} key=0x{}", .{ fmtSliceHexLower(addr), fmtSliceHexLower(key) });
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("accessStorage addr=0x{} key=0x{}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address_key: AddressKey = .{ .address = fromEVMCAddress(addr), .key = key.*.bytes };
-        if (vm.accessed_accounts.contains(address_key))
+        const address_key: AddressKey = .{ .address = address, .key = key.*.bytes };
+        if (vm.accessed_storage_keys.contains(address_key))
             return evmc.EVMC_ACCESS_WARM;
-        try vm.accessed_accounts.fetchPut(address_key, null);
+        _ = vm.accessed_storage_keys.fetchPut(address_key, {}) catch @panic("OOO");
+
         return evmc.EVMC_ACCESS_COLD;
     }
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
-        evmclog.debug("call() kind={} depth={d} sender={} recipient={}", .{ msg.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
+        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 

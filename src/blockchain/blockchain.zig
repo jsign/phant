@@ -14,11 +14,12 @@ const AddressKeySet = common.AddressKeySet;
 const LogsBloom = types.LogsBloom;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
-const StateDB = @import("../statedb/statedb.zig");
+const StateDB = @import("../statedb/statedb.zig").StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
 const VM = vm.VM;
+const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 pub const Blockchain = struct {
     const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8;
@@ -88,16 +89,21 @@ pub const Blockchain = struct {
         // Post execution checks.
         if (result.gas_used != block.header.gas_used)
             return error.InvalidGasUsed;
-        if (result.transactions_root != block.header.transactions_root)
-            return error.InvalidTransactionsRoot;
-        if (result.receipts_root != block.header.receipts_root)
-            return error.InvalidReceiptsRoot;
-        if (result.state.root() != block.header.state_root)
-            return error.InvalidStateRoot;
-        if (result.logs_bloom != block.header.logs_bloom)
-            return error.InvalidLogsBloom;
-        if (result.withdrawals_root != block.header.withdrawals_root)
-            return error.InvalidWithdrawalsRoot;
+        // TODO: disabled until txs root is calculated
+        // if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
+        //     return error.InvalidTransactionsRoot;
+        // TODO: disabled until receipts root is calculated
+        // if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root))
+        //     return error.InvalidReceiptsRoot;
+        // TODO: disabled until state root is calculated
+        // if (!std.mem.eql(u8, &self.state.root(), &block.header.state_root))
+        //     return error.InvalidStateRoot;
+        // TODO: disabled until logs bloom are calculated
+        // if (!std.mem.eql(u8, &result.logs_bloom, &block.header.logs_bloom))
+        //     return error.InvalidLogsBloom;
+        // TODO: disabled until withdrawals root is calculated
+        // if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root))
+        //     return error.InvalidWithdrawalsRoot;
     }
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
@@ -247,47 +253,48 @@ pub const Blockchain = struct {
         chain_id: config.ChainId,
     };
 
-    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Txn) !struct { gas_left: u64 } {
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Txn) !struct { gas_used: u64 } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
 
         const sender = env.origin;
-        const sender_account = try env.state.getAccount(sender);
+        const sender_account = env.state.getAccount(sender);
 
         const gas_fee = tx.getGasLimit() * tx.getGasPrice();
 
-        if (sender_account.nonce != tx.nonce)
+        if (sender_account.nonce != tx.getNonce())
             return error.InvalidTxnNonce;
-        if (sender_account.balance < gas_fee + tx.value)
+        if (sender_account.balance < gas_fee + tx.getValue())
             return error.NotEnoughBalance;
-        if (sender_account.code != null)
+        if (sender_account.code.len > 0)
             return error.SenderIsNotEOA;
 
         const effective_gas_fee = tx.getGasLimit() * env.gas_price;
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
-        env.state.incrementNonce(sender);
+        try env.state.incrementNonce(sender);
 
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
-        env.state.setBalance(sender, sender_balance_after_gas_fee);
+        try env.state.setBalance(sender, sender_balance_after_gas_fee);
 
         var preaccessed_addresses = AddressSet.init(allocator);
         defer preaccessed_addresses.deinit();
-        var preaccessed_stoarge_keys = AddressKeySet.init(allocator);
-        defer preaccessed_stoarge_keys.deinit();
-        preaccessed_addresses.put(env.coinbase, null);
+        var preaccessed_storage_keys = AddressKeySet.init(allocator);
+        defer preaccessed_storage_keys.deinit();
+        try preaccessed_addresses.put(env.coinbase, {});
         switch (tx) {
             .LegacyTxn => {},
-            inline else => {
-                for (tx.access_list) |al| {
-                    preaccessed_addresses.put(al.address, null);
+            inline else => |al_tx| {
+                for (al_tx.access_list) |al| {
+                    try preaccessed_addresses.put(al.address, {});
                     for (al.storage_keys) |key| {
-                        preaccessed_stoarge_keys.put(.{ .address = al.address, .key = key }, null);
+                        try preaccessed_storage_keys.put(.{ .address = al.address, .key = key }, {});
                     }
                 }
             },
         }
 
-        const message = try prepareMessage(
+        var message = try prepareMessage(
+            allocator,
             sender,
             tx.getTo(),
             tx.getValue(),
@@ -295,10 +302,10 @@ pub const Blockchain = struct {
             gas,
             env,
             preaccessed_addresses,
-            preaccessed_stoarge_keys,
+            preaccessed_storage_keys,
         );
         defer message.deinit();
-        const output = processMessageCall(message, env);
+        const output = try processMessageCall(allocator, message, env);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
@@ -309,26 +316,22 @@ pub const Blockchain = struct {
         const total_gas_used = gas_used - gas_refund;
 
         const sender_balance_after_refund = sender_account.balance + gas_refund_amount;
-        env.state.setBalance(sender, sender_balance_after_refund);
+        try env.state.setBalance(sender, sender_balance_after_refund);
 
-        const coinbase_account = try env.state.getAccount(env.coinbase);
+        const coinbase_account = env.state.getAccount(env.coinbase);
         const coinbase_balance_after_mining_fee = coinbase_account.balance + transaction_fee;
 
         if (coinbase_balance_after_mining_fee != 0) {
-            env.state.setBalance(env.coinbase, coinbase_balance_after_mining_fee);
+            try env.state.setBalance(env.coinbase, coinbase_balance_after_mining_fee);
         } else if (env.state.accountExistsAndIsEmpty(env.coinbase)) {
             env.state.destroyAccount(env.coinbase);
         }
 
-        // Account destruction is already managed by EVMC `selfdestruct(...)` callback.
+        // TODO: self destruct processing
+        // for address in output.accounts_to_delete:
+        // destroy_account(env.state, address)
 
-        for (output.touched_accounts) |address| {
-            if (env.state.accountExistsAndIsEmpty(address)) {
-                env.state.destroyAccount(address);
-            }
-        }
-
-        return .{ total_gas_used, output.logs, output.err };
+        return .{ .gas_used = total_gas_used };
     }
 
     fn validateTransaction(tx: transaction.Txn) bool {
@@ -336,18 +339,19 @@ pub const Blockchain = struct {
             return false;
         if (tx.getNonce() >= (2 << 64) - 1)
             return false;
-        if (tx.getTo() == null and tx.data.len > 2 * MAX_CODE_SIZE)
+        if (tx.getTo() == null and tx.getData().len > 2 * MAX_CODE_SIZE)
             return false;
         return true;
     }
 
     fn calculateIntrinsicCost(tx: transaction.Txn) u64 {
         var data_cost: u64 = 0;
-        for (tx.data) |byte| {
+        const data = tx.getData();
+        for (data) |byte| {
             data_cost += if (byte == 0) TX_DATA_COST_PER_ZERO else TX_DATA_COST_PER_NON_ZERO;
         }
 
-        const create_cost = if (tx.to == null) TX_CREATE_COST + initCodeCost(tx.data.len) else 0;
+        const create_cost = if (tx.getTo() == null) TX_CREATE_COST + initCodeCost(data.len) else 0;
 
         const access_list_cost = switch (tx) {
             .LegacyTxn => 0,
@@ -365,7 +369,7 @@ pub const Blockchain = struct {
     }
 
     fn initCodeCost(code_length: usize) u64 {
-        return GAS_INIT_CODE_WORD_COST * @ceil(code_length / 32);
+        return GAS_INIT_CODE_WORD_COST * (code_length + 31) / 32;
     }
 
     pub const Message = struct {
@@ -391,37 +395,37 @@ pub const Blockchain = struct {
     // prepareMessage prepares an EVM message.
     // The caller must call deinit() on the returned Message.
     fn prepareMessage(
+        allocator: Allocator,
         caller: Address,
         target: ?Address,
         value: u256,
         data: []const u8,
         gas: u64,
         env: Environment,
-        code_address: ?Address,
         preaccessed_addresses: AddressSet,
         preaccessed_storage_keys: AddressKeySet,
     ) !Message {
         var current_target: Address = undefined;
+        var code_address: Address = undefined;
         var msg_data: []const u8 = undefined;
         var code: []const u8 = undefined;
 
-        if (target == null) {
-            current_target = try computeContractAddress(caller, env.state.getAccount(caller).nonce - 1);
+        if (target) |targ| {
+            current_target = targ;
+            msg_data = data;
+            code = env.state.getAccount(targ).code;
+            code_address = targ;
+        } else {
+            current_target = try computeContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
             msg_data = &[_]u8{0};
             code = data;
-        } else {
-            current_target = target;
-            msg_data = data;
-            code = env.state.getAccount(target).code;
-            if (code_address == null)
-                code_address = target;
         }
 
         var accessed_addresses = try preaccessed_addresses.clone();
-        try accessed_addresses.put(current_target);
-        try accessed_addresses.put(caller);
+        try accessed_addresses.put(current_target, {});
+        try accessed_addresses.put(caller, {});
         for (PRE_COMPILED_CONTRACT_ADDRESSES) |address| {
-            try accessed_addresses.put(address);
+            try accessed_addresses.put(address, {});
         }
 
         return .{
@@ -433,7 +437,6 @@ pub const Blockchain = struct {
             .data = msg_data,
             .code_address = code_address,
             .code = code,
-            .depth = 0,
             .accessed_addresses = accessed_addresses,
             .accessed_storage_keys = try preaccessed_storage_keys.clone(),
         };
@@ -442,31 +445,36 @@ pub const Blockchain = struct {
     fn computeContractAddress(allocator: Allocator, address: Address, nonce: u64) !Address {
         var out = std.ArrayList(u8).init(allocator);
         defer out.deinit();
-        try rlp.serialize(struct { addr: Address, nonce: u64 }, allocator, .{ address, nonce }, out);
-        const computed_address = std.crypto.hash.sha3.Keccak256(out.items);
-        const canonical_address = computed_address[12..];
+        try rlp.serialize(struct { addr: Address, nonce: u64 }, allocator, .{ .addr = address, .nonce = nonce }, &out);
+
+        var computed_address: [Keccak256.digest_length]u8 = undefined;
+        Keccak256.hash(out.items, &computed_address, .{});
+
         var padded_address: Address = std.mem.zeroes(Address);
-        @memcpy(padded_address[12..], canonical_address);
+        @memcpy(&padded_address, computed_address[12..]);
+
         return padded_address;
     }
 
     const MessageCallOutput = struct {
         gas_left: u64,
-        refund_counter: u256,
+        refund_counter: u64,
         // logs: Union[Tuple[()], Tuple[Log, ...]] TODO
         // accounts_to_delete: AddressKeySet, // TODO (delete?)
         // error: Optional[Exception] TODO
     };
 
-    fn processMessageCall(message: Message, env: Environment) !MessageCallOutput {
-        const vm_instance = VM.init(env);
+    fn processMessageCall(allocator: Allocator, message: Message, env: Environment) !MessageCallOutput {
+        var vm_instance = VM.init(env);
         defer vm_instance.deinit();
 
-        const result = try vm_instance.processMessageCall(message);
-        defer result.release();
+        const result = try vm_instance.processMessageCall(allocator, message);
+        defer {
+            if (result.release) |release| release(&result);
+        }
         return .{
-            .gas_left = result.gas_left,
-            .refund_counter = result.gas_refund,
+            .gas_left = @intCast(result.gas_left),
+            .refund_counter = @intCast(result.gas_refund),
             // .accounts_to_delete = AddressKeySet,
         };
     }

@@ -12,14 +12,14 @@ const AccountState = @This();
 
 allocator: Allocator,
 addr: Address,
-nonce: u256,
+nonce: u64,
 balance: u256,
 code: Bytecode,
 storage: std.AutoHashMap(u256, u256),
 
 // init initializes an account state with the given values.
 // deinit() must be called on the account state to free the storage.
-pub fn init(allocator: Allocator, addr: Address, nonce: u256, balance: u256, code: Bytecode) !AccountState {
+pub fn init(allocator: Allocator, addr: Address, nonce: u64, balance: u256, code: Bytecode) !AccountState {
     return AccountState{
         .allocator = allocator,
         .addr = addr,
