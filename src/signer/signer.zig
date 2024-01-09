@@ -38,6 +38,7 @@ pub const TxnSigner = struct {
 
     pub fn get_sender(self: TxnSigner, allocator: Allocator, tx: Txn) !Address {
         const txn_hash = try self.hashTxn(allocator, tx);
+        std.log.warn("FOOOOOO {}", .{std.fmt.fmtSliceHexLower(&txn_hash)});
 
         var sig: ecdsa.Signature = undefined;
 
@@ -75,30 +76,52 @@ pub const TxnSigner = struct {
     fn hashTxn(self: TxnSigner, allocator: Allocator, transaction: Txn) !Hash32 {
         return switch (transaction) {
             Txn.LegacyTxn => |txn| blk: {
-                // Txn encoding using EIP-155 (since ~Nov 2016).
-                const legacyTxnRLP = struct {
-                    nonce: u64,
-                    gas_price: u256,
-                    gas_limit: u64,
-                    to: ?Address,
-                    value: u256,
-                    data: []const u8,
-                    chain_id: u64,
-                    zero1: u8 = 0,
-                    zero2: u8 = 0,
-                };
-
                 var out = std.ArrayList(u8).init(allocator);
                 defer out.deinit();
-                try rlp.serialize(legacyTxnRLP, allocator, .{
-                    .nonce = txn.nonce,
-                    .gas_price = txn.gas_price,
-                    .gas_limit = txn.gas_limit,
-                    .to = txn.to,
-                    .value = txn.value,
-                    .data = txn.data,
-                    .chain_id = self.chain_id,
-                }, &out);
+
+                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest)) {
+                    // Post EIP-155 (since ~Nov 2016).
+                    const legacyTxnRLP = struct {
+                        nonce: u64,
+                        gas_price: u256,
+                        gas_limit: u64,
+                        to: ?Address,
+                        value: u256,
+                        data: []const u8,
+                        chain_id: u64,
+                        zero1: u8 = 0,
+                        zero2: u8 = 0,
+                    };
+
+                    try rlp.serialize(legacyTxnRLP, allocator, .{
+                        .nonce = txn.nonce,
+                        .gas_price = txn.gas_price,
+                        .gas_limit = txn.gas_limit,
+                        .to = txn.to,
+                        .value = txn.value,
+                        .data = txn.data,
+                        .chain_id = self.chain_id,
+                    }, &out);
+                } else {
+                    // Pre EIP-155.
+                    const legacyTxnRLP = struct {
+                        nonce: u64,
+                        gas_price: u256,
+                        gas_limit: u64,
+                        to: ?Address,
+                        value: u256,
+                        data: []const u8,
+                    };
+
+                    try rlp.serialize(legacyTxnRLP, allocator, .{
+                        .nonce = txn.nonce,
+                        .gas_price = txn.gas_price,
+                        .gas_limit = txn.gas_limit,
+                        .to = txn.to,
+                        .value = txn.value,
+                        .data = txn.data,
+                    }, &out);
+                }
 
                 break :blk hasher.keccak256(out.items);
             },
@@ -160,7 +183,7 @@ pub const TxnSigner = struct {
     }
 };
 
-test "Mainnet transactions signature recovery/verification" {
+test "mainnet transactions signature recovery/verification" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const testCase = struct {
