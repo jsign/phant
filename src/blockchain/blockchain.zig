@@ -14,7 +14,7 @@ const AddressKeySet = common.AddressKeySet;
 const LogsBloom = types.LogsBloom;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
-const StateDB = @import("../statedb/statedb.zig").StateDB;
+const StateDB = @import("../state/statedb.zig").StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
@@ -247,7 +247,7 @@ pub const Blockchain = struct {
         base_fee_per_gas: u256,
         gas_limit: u64,
         gas_price: u256,
-        time: u256,
+        time: u64,
         prev_randao: Bytes32,
         state: *StateDB,
         chain_id: config.ChainId,

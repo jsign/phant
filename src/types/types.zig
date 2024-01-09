@@ -4,11 +4,7 @@ pub const Bytes32 = [32]u8;
 pub const Bytes31 = [31]u8;
 
 // Ethereum execution layer types.
-pub const Bytecode = []const u8;
 pub const Address = [20]u8;
-
-// State.
-pub const AccountState = @import("account_state.zig");
 
 // Blocks
 pub const block = @import("block.zig");

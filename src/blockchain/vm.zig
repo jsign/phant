@@ -19,7 +19,7 @@ const AccountState = types.AccountState;
 const Bytecode = types.Bytecode;
 const Hash32 = types.Hash32;
 const Address = types.Address;
-const StateDB = @import("../statedb/statedb.zig");
+const StateDB = @import("../state/statedb.zig").StateDB;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 const assert = std.debug.assert;
@@ -70,8 +70,9 @@ pub const VM = struct {
 
     // deinit destroys a VM instance.
     pub fn deinit(self: *VM) void {
-        self.evm.destroy();
-        self.evm = undefined;
+        if (self.evm.*.destroy) |destroy| {
+            destroy(self.evm);
+        }
     }
 
     // processMessageCall executes a message call.
@@ -119,15 +120,15 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?))); // TODO: alignCast needed?
         return evmc.struct_evmc_tx_context{
-            .tx_gas_price = toEVMCBytes32(vm.env.?.txn.gas_price),
-            .tx_origin = toEVMCAddress(vm.env.?.txn.from),
-            .block_coinbase = toEVMCAddress(vm.env.?.block.coinbase),
-            .block_number = @intCast(vm.env.?.block.number),
-            .block_timestamp = @intCast(vm.env.?.block.timestamp),
-            .block_gas_limit = @intCast(vm.env.?.block.gas_limit),
-            .block_prev_randao = toEVMCBytes32(vm.env.?.block.prev_randao),
-            .chain_id = toEVMCBytes32(vm.env.?.txn.chain_id),
-            .block_base_fee = toEVMCBytes32(vm.env.?.block.base_fee),
+            .tx_gas_price = toEVMCUint256Be(vm.env.gas_price),
+            .tx_origin = toEVMCAddress(vm.env.origin),
+            .block_coinbase = toEVMCAddress(vm.env.coinbase),
+            .block_number = @intCast(vm.env.number),
+            .block_timestamp = @intCast(vm.env.time),
+            .block_gas_limit = @intCast(vm.env.gas_limit),
+            .block_prev_randao = .{ .bytes = vm.env.prev_randao },
+            .chain_id = toEVMCUint256Be(@intFromEnum(vm.env.chain_id)),
+            .block_base_fee = toEVMCUint256Be(vm.env.base_fee_per_gas),
         };
     }
 
@@ -135,7 +136,7 @@ const EVMOneHost = struct {
         evmclog.debug("get_tx_context block_number={}", .{block_number});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const idx = vm.env.number - block_number;
+        const idx = vm.env.number - @as(u64, @intCast(block_number));
         if (idx < 0 or idx >= vm.env.block_hashes.len) {
             return std.mem.zeroes(evmc.evmc_bytes32);
         }
@@ -147,7 +148,7 @@ const EVMOneHost = struct {
         evmclog.debug("account_exists addr=0x{}", .{fmtSliceHexLower(&address)});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        return try vm.env.state.getAccount() != null;
+        return vm.env.state.getAccountOpt(address) != null;
     }
 
     fn get_storage(
@@ -155,12 +156,12 @@ const EVMOneHost = struct {
         addr: [*c]const evmc.evmc_address,
         key: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.evmc_bytes32 {
-        evmclog.debug("get_storage addr=0x{} key={}", .{ fmtSliceHexLower(&addr), fmtSliceHexLower(&key.*) });
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("get_storage addr=0x{} key={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
-        const address = fromEVMCAddress(addr.*);
-        return vm.env.state.getStorage(address, k) orelse std.mem.zeroes(Hash32);
+        return .{ .bytes = vm.env.state.getStorage(address, k) };
     }
 
     fn set_storage(
@@ -169,10 +170,10 @@ const EVMOneHost = struct {
         key: [*c]const evmc.evmc_bytes32,
         value: [*c]const evmc.evmc_bytes32,
     ) callconv(.C) evmc.enum_evmc_storage_status {
-        evmclog.debug("set_storage addr=0x{} key={} value={}", .{ fmtSliceHexLower(&addr), fmtSliceHexLower(&key.*), fmtSliceHexLower(&value.*) });
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("set_storage addr=0x{} key={} value={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes), fmtSliceHexLower(&value.*.bytes) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address = fromEVMCAddress(addr.*);
         const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
         const v = std.mem.readIntSlice(u256, &value.*.bytes, std.builtin.Endian.Big);
         vm.env.state.setStorage(address, k, v) catch |err| switch (err) {
@@ -185,40 +186,35 @@ const EVMOneHost = struct {
     }
 
     fn get_balance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_uint256be {
-        evmclog.debug("getBalance addr=0x{})", .{fmtSliceHexLower(&addr)});
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("getBalance addr=0x{})", .{fmtSliceHexLower(&address)});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address = fromEVMCAddress(addr.*);
-        const balance_bytes = blk: {
-            const balance = vm.env.state.getAccount(address) orelse 0;
-            var buf: [32]u8 = undefined;
-            std.mem.writeIntSliceBig(u256, &buf, balance);
-            break :blk buf;
-        };
-        return evmc.evmc_uint256be{ .bytes = balance_bytes };
+        return toEVMCUint256Be(vm.env.state.getAccount(address).balance);
     }
 
     fn get_code_size(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) usize {
-        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&addr)});
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&address)});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address = fromEVMCAddress(addr.*);
-        return if (vm.env.state.getCode(address)) |code| code.len else 0;
+        return vm.env.state.getAccount(address).code.len;
     }
 
     fn get_code_hash(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
     ) callconv(.C) evmc.evmc_bytes32 {
-        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&addr)});
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&address)});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address = fromEVMCAddress(addr.*);
-        const ret = empty_hash;
-        if (vm.env.state.getCode(address)) |code| {
-            Keccak256.hash(&ret, code, .{});
-        }
-        return ret;
+        var ret = empty_hash;
+        const code = vm.env.state.getAccount(address).code;
+        if (code.len > 0)
+            Keccak256.hash(code, &ret, .{});
+
+        return .{ .bytes = ret };
     }
 
     fn copy_code(
@@ -228,14 +224,16 @@ const EVMOneHost = struct {
         buffer_data: [*c]u8,
         buffer_size: usize,
     ) callconv(.C) usize {
-        evmclog.debug("copyCode addr=0x{} code_offset={})", .{ fmtSliceHexLower(&addr), code_offset });
+        const address = fromEVMCAddress(addr.*);
+        evmclog.debug("copyCode addr=0x{} code_offset={})", .{ fmtSliceHexLower(&address), code_offset });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const address = fromEVMCAddress(addr.*);
-        const code = vm.env.state.getCode(address) orelse @panic("copyCode account doesn't exist");
+        const code = vm.env.state.getAccount(address).code;
 
         const copy_len = @min(buffer_size, code.len - code_offset);
-        @memcpy(buffer_data, code[code_offset..][0..copy_len]);
+        @memcpy(buffer_data[0..copy_len], code[code_offset..][0..copy_len]);
+
+        return copy_len;
     }
 
     fn self_destruct(
@@ -298,11 +296,11 @@ const EVMOneHost = struct {
     }
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
-        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) }); // TODO(jsign): explore creating custom formatter?
+        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
-        if (msg.depth > STACK_DEPTH_LIMIT) {
+        if (msg.*.depth > STACK_DEPTH_LIMIT) {
             return .{
                 .status_code = evmc.EVMC_CALL_DEPTH_EXCEEDED,
                 .gas_left = 0,
@@ -311,29 +309,24 @@ const EVMOneHost = struct {
                 .output_size = 0,
                 .release = null,
                 .create_address = std.mem.zeroes(evmc.struct_evmc_address),
-                .padding = [_]u9{0} ** 4,
+                .padding = [_]u8{0} ** 4,
             };
         }
 
-        // Save current context.
-        const prev_accessed_accounts = vm.accessed_accounts;
-        const prev_accessed_storage_keys = vm.accessed_storage_keys;
-        const prev_statedb = vm.env.state;
+        // Persist current context in case we need it for scope revert.
+        // deinit-ing these sets will happen later if the scope doesn't revert, since we didn't end up
+        // using them.
+        const prev_accessed_accounts = vm.accessed_accounts.clone() catch @panic("OOO");
+        const prev_accessed_storage_keys = vm.accessed_storage_keys.clone() catch @panic("OOO");
+        const prev_statedb = vm.env.state.snapshot() catch @panic("OOO");
 
-        // Create new call context.
-        vm.accessed_accounts = vm.accessed_accounts.clone();
-        defer vm.accessed_accounts.deinit();
-        vm.accessed_storage_keys = vm.accessed_storage_keys.clone();
-        defer vm.accessed_storage_keys.deinit();
-        vm.env.state = vm.env.state.snapshot();
-        defer vm.env.state.deinit();
+        // TODO: change env caller?
 
         // Send value.
-        if (msg.value.bytes != [_]u8{0} ** 32) {
-            const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
-
-            const sender = toEVMCAddress(msg.sender);
-            const sender_balance = if (vm.env.state.getAccount(sender)) |acc| acc.balance else 0;
+        const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
+        if (value > 0) {
+            const sender = fromEVMCAddress(msg.*.sender);
+            const sender_balance = vm.env.state.getAccount(sender).balance;
             if (sender_balance < value) {
                 return .{
                     .status_code = evmc.EVMC_INSUFFICIENT_BALANCE,
@@ -343,34 +336,35 @@ const EVMOneHost = struct {
                     .output_size = 0,
                     .release = null,
                     .create_address = std.mem.zeroes(evmc.struct_evmc_address),
-                    .padding = [_]u9{0} ** 4,
+                    .padding = [_]u8{0} ** 4,
                 };
             }
             vm.env.state.setBalance(sender, sender_balance - value) catch @panic("OOO");
-            const receipient_balance = if (vm.env.state.getAccount(toEVMCAddress(msg.recipient))) |acc| acc.balance else 0;
+            const receipient_balance = vm.env.state.getAccount(fromEVMCAddress(msg.*.recipient)).balance;
             vm.env.state.setBalance(sender, receipient_balance + value) catch @panic("OOO");
         }
-        const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
-        _ = value;
 
-        const code_address = toEVMCAddress(msg.code_address);
-        const code = vm.env.state.getCode(code_address);
+        const code_address = fromEVMCAddress(msg.*.code_address);
+        const code = vm.env.state.getAccount(code_address).code;
         var result = vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),
             @ptrCast(vm),
             evmc.EVMC_SHANGHAI, // TODO: generalize from block_number.
             msg,
-            code.code.ptr,
-            code.code.len,
+            code.ptr,
+            code.len,
         );
         evmclog.debug("internal call exec result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
 
         if (result.status_code != evmc.EVMC_SUCCESS) {
-            // Restore previous context.
             vm.accessed_accounts = prev_accessed_accounts;
             vm.accessed_storage_keys = prev_accessed_storage_keys;
             vm.env.state = prev_statedb;
+        } else {
+            prev_accessed_accounts.deinit();
+            prev_accessed_storage_keys.deinit();
+            prev_statedb.deinit();
         }
 
         return result;
@@ -402,9 +396,8 @@ fn fromEVMCAddress(address: evmc.struct_evmc_address) Address {
     return address.bytes;
 }
 
-// toEVMCBytes32 transforms a u256 into an evmc_bytes32.
-fn toEVMCBytes32(num: u256) evmc.evmc_bytes32 {
-    return evmc.struct_evmc_bytes32{
+fn toEVMCUint256Be(num: u256) evmc.evmc_uint256be {
+    return .{
         .bytes = blk: {
             var ret: [32]u8 = undefined;
             std.mem.writeIntSliceBig(u256, &ret, num);

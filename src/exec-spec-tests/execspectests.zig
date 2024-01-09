@@ -5,15 +5,17 @@ const types = @import("../types/types.zig");
 const blockchain = @import("../blockchain/blockchain.zig");
 const vm = @import("../blockchain/vm.zig");
 const ecdsa = @import("../crypto/ecdsa.zig");
+const state = @import("../state/statedb.zig");
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
-const AccountState = types.AccountState;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const Txn = types.Txn;
 const Hash32 = types.Hash32;
+const Bytes32 = types.Bytes32;
 const VM = vm.VM;
-const StateDB = @import("../statedb/statedb.zig").StateDB;
+const StateDB = state.StateDB;
+const AccountState = state.AccountState;
 const TxnSigner = @import("../signer/signer.zig").TxnSigner;
 const log = std.log.scoped(.execspectests);
 
@@ -206,8 +208,9 @@ pub const AccountStateHex = struct {
         while (it.next()) |entry| {
             const key = try std.fmt.parseUnsigned(u256, entry.key_ptr.*[2..], 16);
             const value = try std.fmt.parseUnsigned(u256, entry.value_ptr.*[2..], 16);
-
-            try account.storage_set(key, value);
+            var value_bytes: Bytes32 = undefined;
+            std.mem.writeInt(u256, &value_bytes, value, .Big);
+            try account.storage.putNoClobber(key, value_bytes);
         }
 
         return account;
