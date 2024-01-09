@@ -1,6 +1,8 @@
 const std = @import("std");
 const rlp = @import("zig-rlp");
 const types = @import("types.zig");
+const Allocator = std.mem.Allocator;
+const Arena = std.heap.ArenaAllocator;
 const Withdrawal = types.Withdrawal;
 const Txn = types.Txn;
 const Hash32 = types.Hash32;
@@ -38,12 +40,9 @@ pub const Block = struct {
     uncles: []BlockHeader,
     withdrawals: []Withdrawal,
 
-    // new returns a new Block deserialized from rlp_bytes.
-    // The returned Block has references to the rlp_bytes slice.
-    pub fn init(rlp_bytes: []const u8) !Block {
+    pub fn decode(arena: Allocator, rlp_bytes: []const u8) !Block {
         var block = std.mem.zeroes(Block);
-        _ = try rlp.deserialize(Block, rlp_bytes, &block);
-        // TODO: consider strict checking of returned deserialized length vs rlp_bytes.len.
+        _ = try rlp.deserialize(Block, rlp_bytes, &block, arena);
         return block;
     }
 };

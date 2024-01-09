@@ -161,6 +161,8 @@ pub const TxnSigner = struct {
 };
 
 test "Mainnet transactions signature recovery/verification" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
     const testCase = struct {
         rlp_encoded: []const u8,
         expected_sender: []const u8,
@@ -183,7 +185,7 @@ test "Mainnet transactions signature recovery/verification" {
     inline for (test_cases) |testcase| {
         var txn_bytes: [testcase.rlp_encoded.len / 2]u8 = undefined;
         _ = try std.fmt.hexToBytes(&txn_bytes, testcase.rlp_encoded);
-        const txn = try Txn.decode(&txn_bytes);
+        const txn = try Txn.decode(arena.allocator(), &txn_bytes);
 
         const signer = try TxnSigner.init(@intFromEnum(config.ChainId.Mainnet));
         const sender = try signer.get_sender(std.testing.allocator, txn);

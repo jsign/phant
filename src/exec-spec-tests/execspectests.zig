@@ -75,19 +75,19 @@ pub const FixtureTest = struct {
         var statedb = try StateDB.init(allocator, accounts_state);
 
         // 2. Execute blocks.
-        const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
+        // const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
         for (self.blocks) |encoded_block| {
             var out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             defer allocator.free(out);
             const rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
 
-            const block = try Block.init(rlp_bytes);
+            const block = try Block.decode(allocator, rlp_bytes);
 
-            var txns = try allocator.alloc(Txn, encoded_block.transactions.len);
-            defer allocator.free(txns);
-            for (encoded_block.transactions, 0..) |tx_hex, i| {
-                txns[i] = try tx_hex.to_vm_transaction(allocator, txn_signer);
-            }
+            // var txns = try allocator.alloc(Txn, encoded_block.transactions.len);
+            // defer allocator.free(txns);
+            // for (encoded_block.transactions, 0..) |tx_hex, i| {
+            //     txns[i] = try tx_hex.to_vm_transaction(allocator, txn_signer);
+            // }
 
             var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, null, std.mem.zeroes([256]Hash32));
             try chain.runBlock(block);

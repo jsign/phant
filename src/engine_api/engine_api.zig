@@ -38,7 +38,7 @@ const AllPossibleExecutionParams = struct {
         if (self.transactions.len > 0) {
             txns = try allocator.alloc(Txn, self.transactions.len);
             for (self.transactions, 0..) |tx, i| {
-                txns[i] = try Txn.decode(tx);
+                txns[i] = try Txn.decode(allocator, tx);
             }
         }
 

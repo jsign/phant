@@ -12,7 +12,7 @@ pub const empty_uncle_hash = block.empty_uncle_hash;
 pub const Block = block.Block;
 pub const BlockHeader = block.BlockHeader;
 pub const LogsBloom = block.LogsBloom;
-pub const Withdrawal = @import("withdrawal.zig");
+pub const Withdrawal = @import("withdrawal.zig").Withdrawal;
 
 // Transactions
 const transaction = @import("transaction.zig");

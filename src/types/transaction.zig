@@ -24,20 +24,20 @@ pub const Txn = union(TxnTypes) {
     }
 
     // decode decodes a transaction from bytes. The provided bytes are referenced in the returned transaction.
-    pub fn decode(bytes: []const u8) !Txn {
+    pub fn decode(arena: Allocator, bytes: []const u8) !Txn {
         if (bytes.len == 0) {
             return error.EncodedTxnCannotBeEmpty;
         }
 
         // EIP-2718: Transaction Type Transaction
         if (bytes[0] <= 0x7f) {
-            if (bytes[0] == 0x01) return Txn{ .AccessListTxn = try AccessListTxn.decode(bytes[1..]) };
-            if (bytes[0] == 0x02) return Txn{ .FeeMarketTxn = try FeeMarketTxn.decode(bytes[1..]) };
+            if (bytes[0] == 0x01) return Txn{ .AccessListTxn = try AccessListTxn.decode(arena, bytes[1..]) };
+            if (bytes[0] == 0x02) return Txn{ .FeeMarketTxn = try FeeMarketTxn.decode(arena, bytes[1..]) };
             return error.UnsupportedEIP2930TxnType;
         }
 
         // LegacyTxn
-        if (bytes[0] >= 0xc0 and bytes[0] <= 0xfe) return Txn{ .LegacyTxn = try LegacyTxn.decode(bytes) };
+        if (bytes[0] >= 0xc0 and bytes[0] <= 0xfe) return Txn{ .LegacyTxn = try LegacyTxn.decode(arena, bytes) };
 
         return error.UnsupportedTxnType;
     }
@@ -142,8 +142,8 @@ pub const LegacyTxn = struct {
 
     // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
     // output transaction.
-    pub fn decode(bytes: []const u8) !LegacyTxn {
-        return try RLPDecode(LegacyTxn, bytes);
+    pub fn decode(arena: Allocator, bytes: []const u8) !LegacyTxn {
+        return try RLPDecode(LegacyTxn, arena, bytes);
     }
 
     pub fn hash(self: LegacyTxn, allocator: Allocator) !Hash32 {
@@ -200,8 +200,8 @@ pub const AccessListTxn = struct {
     }
 
     // decode decodes a transaction from bytes.
-    pub fn decode(bytes: []const u8) !AccessListTxn {
-        return try RLPDecode(AccessListTxn, bytes);
+    pub fn decode(arena: Allocator, bytes: []const u8) !AccessListTxn {
+        return try RLPDecode(AccessListTxn, arena, bytes);
     }
 };
 
@@ -233,14 +233,14 @@ pub const FeeMarketTxn = struct {
     }
 
     // decode decodes a transaction from bytes.
-    pub fn decode(bytes: []const u8) !FeeMarketTxn {
-        return try RLPDecode(FeeMarketTxn, bytes);
+    pub fn decode(arena: Allocator, bytes: []const u8) !FeeMarketTxn {
+        return try RLPDecode(FeeMarketTxn, arena, bytes);
     }
 };
 
-pub fn RLPDecode(comptime T: type, bytes: []const u8) !T {
+pub fn RLPDecode(comptime T: type, arena: Allocator, bytes: []const u8) !T {
     var ret: T = std.mem.zeroes(T);
-    _ = try rlp.deserialize(T, bytes, &ret);
+    _ = try rlp.deserialize(T, bytes, &ret, arena);
     return ret;
 }
 
@@ -255,6 +255,8 @@ pub fn RLPHash(comptime T: type, allocator: Allocator, txn: T, prefix: ?[]const 
 }
 
 test "Mainnet transactions hashing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
     const testCase = struct {
         rlp_encoded: []const u8,
         expected_hash: []const u8,
@@ -287,7 +289,7 @@ test "Mainnet transactions hashing" {
         var txn_bytes: [testcase.rlp_encoded.len / 2]u8 = undefined;
         _ = try std.fmt.hexToBytes(&txn_bytes, testcase.rlp_encoded);
 
-        const txn = try Txn.decode(&txn_bytes);
+        const txn = try Txn.decode(arena.allocator(), &txn_bytes);
         const hash = try txn.hash(std.testing.allocator);
         try std.testing.expectEqualStrings(testcase.expected_hash, &std.fmt.bytesToHex(hash, std.fmt.Case.lower));
     }
