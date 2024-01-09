@@ -42,6 +42,22 @@ pub const Txn = union(TxnTypes) {
         return error.UnsupportedTxnType;
     }
 
+    pub fn decodeRLP(self: *Txn, serialized: []const u8) !usize {
+        var alloc = std.testing.allocator;
+        var arena = std.heap.ArenaAllocator.init(alloc);
+        if (serialized[0] > 0xC0) { // Is a RLP struct (i.e: LegacyTx)
+            var ltx: LegacyTxn = undefined;
+            const size = rlp.deserialize(LegacyTxn, serialized, &ltx, arena.allocator());
+            self.* = .{ .LegacyTxn = ltx };
+            return size;
+        }
+        var str: []const u8 = undefined;
+        const size = try rlp.deserialize([]const u8, serialized, &str, arena.allocator());
+        self.* = try Txn.decode(arena.allocator(), str);
+
+        return size;
+    }
+
     pub fn hash(self: Txn, allocator: Allocator) !Hash32 {
         return switch (self) {
             Txn.LegacyTxn => |txn| try txn.hash(allocator),
