@@ -175,8 +175,7 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
-        const v = std.mem.readIntSlice(u256, &value.*.bytes, std.builtin.Endian.Big);
-        vm.env.state.setStorage(address, k, v) catch |err| switch (err) {
+        vm.env.state.setStorage(address, k, value.*.bytes) catch |err| switch (err) {
             // From EVMC docs: "The VM MUST make sure that the account exists. This requirement is only a formality
             // because VM implementations only modify storage of the account of the current execution context".
             error.AccountDoesNotExist => @panic("set storage in non-existent account"),
@@ -316,9 +315,9 @@ const EVMOneHost = struct {
         // Persist current context in case we need it for scope revert.
         // deinit-ing these sets will happen later if the scope doesn't revert, since we didn't end up
         // using them.
-        const prev_accessed_accounts = vm.accessed_accounts.clone() catch @panic("OOO");
-        const prev_accessed_storage_keys = vm.accessed_storage_keys.clone() catch @panic("OOO");
-        const prev_statedb = vm.env.state.snapshot() catch @panic("OOO");
+        var prev_accessed_accounts = vm.accessed_accounts.clone() catch @panic("OOO");
+        var prev_accessed_storage_keys = vm.accessed_storage_keys.clone() catch @panic("OOO");
+        var prev_statedb = vm.env.state.snapshot() catch @panic("OOO");
 
         // TODO: change env caller?
 
@@ -360,7 +359,7 @@ const EVMOneHost = struct {
         if (result.status_code != evmc.EVMC_SUCCESS) {
             vm.accessed_accounts = prev_accessed_accounts;
             vm.accessed_storage_keys = prev_accessed_storage_keys;
-            vm.env.state = prev_statedb;
+            vm.env.state.* = prev_statedb;
         } else {
             prev_accessed_accounts.deinit();
             prev_accessed_storage_keys.deinit();

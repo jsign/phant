@@ -46,8 +46,8 @@ pub const StateDB = struct {
     }
 
     pub fn getStorage(self: *StateDB, addr: Address, key: u256) Bytes32 {
-        const account = self.db.get(addr) orelse return 0;
-        return account.storage.get(key) orelse 0;
+        const account = self.db.get(addr) orelse return std.mem.zeroes(Bytes32);
+        return account.storage.get(key) orelse std.mem.zeroes(Bytes32);
     }
 
     pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: Bytes32) !void {
