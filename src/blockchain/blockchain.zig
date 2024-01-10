@@ -7,6 +7,7 @@ const transaction = @import("../types/transaction.zig");
 const vm = @import("vm.zig");
 const rlp = @import("zig-rlp");
 const signer = @import("../signer/signer.zig");
+const params = @import("params.zig");
 const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
 const AddresssKey = common.AddressKey;
@@ -22,50 +23,20 @@ const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 pub const Blockchain = struct {
-    const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8;
-    const ELASTICITY_MULTIPLIER = 2;
-
-    const GAS_LIMIT_ADJUSTMENT_FACTOR = 1024;
-    const GAS_LIMIT_MINIMUM = 5000;
-    const GAS_INIT_CODE_WORD_COST = 2;
-
-    const MAX_CODE_SIZE = 0x6000;
-
-    const TX_BASE_COST = 21000;
-    const TX_DATA_COST_PER_ZERO = 4;
-    const TX_DATA_COST_PER_NON_ZERO = 16;
-    const TX_CREATE_COST = 32000;
-    const TX_ACCESS_LIST_ADDRESS_COST = 2400;
-    const TX_ACCESS_LIST_STORAGE_KEY_COST = 1900;
-
-    const PRE_COMPILED_CONTRACT_ADDRESSES = [_]Address{
-        // TODO: see if it's worth importing some .h file from EVMOne
-        // an instantiate this at comptime to avoid maintaining this list.
-        [_]u8{0} ** 19 ++ [_]u8{1}, // ECRECOVER
-        [_]u8{0} ** 19 ++ [_]u8{2}, // SHA256
-        [_]u8{0} ** 19 ++ [_]u8{3}, // RIPEMD160
-        [_]u8{0} ** 19 ++ [_]u8{4}, // IDENTITY_ADDRESS
-        [_]u8{0} ** 19 ++ [_]u8{5}, // MODEXP_ADDRESS
-        [_]u8{0} ** 19 ++ [_]u8{6}, // ALT_BN128_ADD
-        [_]u8{0} ** 19 ++ [_]u8{7}, // ALT_BN128_MUL
-        [_]u8{0} ** 19 ++ [_]u8{8}, // ALT_BN128_PAIRING_CHECK
-        [_]u8{0} ** 19 ++ [_]u8{9}, // BLAKE2F
-    };
-
     allocator: Allocator,
     chain_id: config.ChainId,
     state: *StateDB,
-    prev_block: ?BlockHeader,
-    last_256_blocks_hashes: [256]Hash32, // blocks ordered in asc order
+    prev_block: BlockHeader,
+    last_256_blocks_hashes: [256]Hash32, // ordered in asc order
 
     pub fn init(
         allocator: Allocator,
         chain_id: config.ChainId,
         state: *StateDB,
-        prev_block: ?BlockHeader,
+        prev_block: BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
     ) Blockchain {
-        return Blockchain{
+        return .{
             .allocator = allocator,
             .chain_id = chain_id,
             .state = state,
@@ -108,35 +79,31 @@ pub const Blockchain = struct {
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
     // If isn't valid, it returns an error.
-    fn validateBlockHeader(allocator: Allocator, parent_block: ?BlockHeader, curr_block: BlockHeader) !void {
-        if (parent_block) |prev_block| {
-            try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
-        }
+    fn validateBlockHeader(allocator: Allocator, prev_block: ?BlockHeader, curr_block: BlockHeader) !void {
+        try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
         if (curr_block.gas_used > curr_block.gas_limit)
             return error.GasLimitExceeded;
 
         // Check base fee.
-        if (parent_block) |prev_block| {
-            const parent_gas_target = prev_block.gas_limit / ELASTICITY_MULTIPLIER;
-            var expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
-                prev_block.base_fee_per_gas
-            else if (prev_block.gas_used > parent_gas_target) blk: {
-                const gas_used_delta = prev_block.gas_used - parent_gas_target;
-                const base_fee_per_gas_delta = @max(prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR, 1);
-                break :blk prev_block.base_fee_per_gas + base_fee_per_gas_delta;
-            } else blk: {
-                const gas_used_delta = parent_gas_target - prev_block.gas_used;
-                const base_fee_per_gas_delta = prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / BASE_FEE_MAX_CHANGE_DENOMINATOR;
-                break :blk prev_block.base_fee_per_gas - base_fee_per_gas_delta;
-            };
-            if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
-                return error.InvalidBaseFee;
+        const parent_gas_target = prev_block.gas_limit / params.elasticity_multiplier;
+        var expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
+            prev_block.base_fee_per_gas
+        else if (prev_block.gas_used > parent_gas_target) blk: {
+            const gas_used_delta = prev_block.gas_used - parent_gas_target;
+            const base_fee_per_gas_delta = @max(prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator, 1);
+            break :blk prev_block.base_fee_per_gas + base_fee_per_gas_delta;
+        } else blk: {
+            const gas_used_delta = parent_gas_target - prev_block.gas_used;
+            const base_fee_per_gas_delta = prev_block.base_fee_per_gas * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator;
+            break :blk prev_block.base_fee_per_gas - base_fee_per_gas_delta;
+        };
+        if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
+            return error.InvalidBaseFee;
 
-            if (curr_block.timestamp > prev_block.timestamp)
-                return error.InvalidTimestamp;
-            if (curr_block.block_number != prev_block.block_number + 1)
-                return error.InvalidBlockNumber;
-        }
+        if (curr_block.timestamp > prev_block.timestamp)
+            return error.InvalidTimestamp;
+        if (curr_block.block_number != prev_block.block_number + 1)
+            return error.InvalidBlockNumber;
         if (curr_block.extra_data.len > 32)
             return error.ExtraDataTooLong;
 
@@ -147,18 +114,16 @@ pub const Blockchain = struct {
         if (!std.mem.eql(u8, &curr_block.uncle_hash, &blocks.empty_uncle_hash))
             return error.InvalidUnclesHash;
 
-        if (parent_block) |prev_block| {
-            const prev_block_hash = try transaction.RLPHash(BlockHeader, allocator, prev_block, null);
-            if (!std.mem.eql(u8, &curr_block.parent_hash, &prev_block_hash))
-                return error.InvalidParentHash;
-        }
+        const prev_block_hash = try transaction.RLPHash(BlockHeader, allocator, prev_block, null);
+        if (!std.mem.eql(u8, &curr_block.parent_hash, &prev_block_hash))
+            return error.InvalidParentHash;
     }
 
     fn checkGasLimit(gas_limit: u256, parent_gas_limit: u256) !void {
-        const max_delta = parent_gas_limit / GAS_LIMIT_ADJUSTMENT_FACTOR;
+        const max_delta = parent_gas_limit / params.gas_limit_adjustement_factor;
         if (gas_limit >= parent_gas_limit + max_delta) return error.GasLimitTooHigh;
         if (gas_limit <= parent_gas_limit - max_delta) return error.GasLimitTooLow;
-        if (gas_limit >= GAS_LIMIT_MINIMUM) return error.GasLimitLessThanMinimum;
+        if (gas_limit >= params.gas_limit_minimum) return error.GasLimitLessThanMinimum;
     }
 
     const BlockExecutionResult = struct {
@@ -338,7 +303,7 @@ pub const Blockchain = struct {
             return false;
         if (tx.getNonce() >= (2 << 64) - 1)
             return false;
-        if (tx.getTo() == null and tx.getData().len > 2 * MAX_CODE_SIZE)
+        if (tx.getTo() == null and tx.getData().len > 2 * params.max_code_size)
             return false;
         return true;
     }
@@ -347,28 +312,28 @@ pub const Blockchain = struct {
         var data_cost: u64 = 0;
         const data = tx.getData();
         for (data) |byte| {
-            data_cost += if (byte == 0) TX_DATA_COST_PER_ZERO else TX_DATA_COST_PER_NON_ZERO;
+            data_cost += if (byte == 0) params.tx_data_cost_per_zero else params.tx_data_cost_per_non_zero;
         }
 
-        const create_cost = if (tx.getTo() == null) TX_CREATE_COST + initCodeCost(data.len) else 0;
+        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(data.len) else 0;
 
         const access_list_cost = switch (tx) {
             .LegacyTxn => 0,
             inline else => |al_tx| blk: {
                 var sum: u64 = 0;
                 for (al_tx.access_list) |al| {
-                    data_cost += TX_ACCESS_LIST_ADDRESS_COST;
-                    data_cost += al.storage_keys.len * TX_ACCESS_LIST_STORAGE_KEY_COST;
+                    data_cost += params.tx_access_list_address_cost;
+                    data_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
                 }
                 break :blk sum;
             },
         };
 
-        return TX_BASE_COST + data_cost + create_cost + access_list_cost;
+        return params.tx_base_cost + data_cost + create_cost + access_list_cost;
     }
 
     fn initCodeCost(code_length: usize) u64 {
-        return GAS_INIT_CODE_WORD_COST * (code_length + 31) / 32;
+        return params.gas_init_code_word_const * (code_length + 31) / 32;
     }
 
     pub const Message = struct {
@@ -423,7 +388,7 @@ pub const Blockchain = struct {
         var accessed_addresses = try preaccessed_addresses.clone();
         try accessed_addresses.put(current_target, {});
         try accessed_addresses.put(caller, {});
-        for (PRE_COMPILED_CONTRACT_ADDRESSES) |address| {
+        for (params.precompiled_contract_addresses) |address| {
             try accessed_addresses.put(address, {});
         }
 
