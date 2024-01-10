@@ -40,7 +40,7 @@ pub const Block = struct {
 
     pub fn decode(arena: Allocator, rlp_bytes: []const u8) !Block {
         var block: Block = undefined;
-        _ = try rlp.deserialize(Block, rlp_bytes, &block, arena);
+        _ = try rlp.deserialize(Block, arena, rlp_bytes, &block);
         return block;
     }
 };

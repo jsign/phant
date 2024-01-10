@@ -42,18 +42,16 @@ pub const Txn = union(TxnTypes) {
         return error.UnsupportedTxnType;
     }
 
-    pub fn decodeRLP(self: *Txn, serialized: []const u8) !usize {
-        var alloc = std.testing.allocator;
-        var arena = std.heap.ArenaAllocator.init(alloc);
+    pub fn decodeFromRLP(self: *Txn, arena: Allocator, serialized: []const u8) !usize {
         if (serialized[0] > 0xC0) { // Is a RLP struct (i.e: LegacyTx)
             var ltx: LegacyTxn = undefined;
-            const size = rlp.deserialize(LegacyTxn, serialized, &ltx, arena.allocator());
+            const size = rlp.deserialize(LegacyTxn, arena, serialized, &ltx);
             self.* = .{ .LegacyTxn = ltx };
             return size;
         }
         var str: []const u8 = undefined;
-        const size = try rlp.deserialize([]const u8, serialized, &str, arena.allocator());
-        self.* = try Txn.decode(arena.allocator(), str);
+        const size = try rlp.deserialize([]const u8, arena, serialized, &str);
+        self.* = try Txn.decode(arena, str);
 
         return size;
     }
@@ -257,7 +255,7 @@ pub const FeeMarketTxn = struct {
 // TODO: move to common.
 pub fn RLPDecode(comptime T: type, arena: Allocator, bytes: []const u8) !T {
     var ret: T = std.mem.zeroes(T);
-    _ = try rlp.deserialize(T, bytes, &ret, arena);
+    _ = try rlp.deserialize(T, arena, bytes, &ret);
     return ret;
 }
 

@@ -4,7 +4,7 @@
     .dependencies = .{
         .@"zig-rlp" = .{
             .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.0.1-beta-11.tar.gz",
-            .hash = "12203209eed686ebe19350c9d97578291025ba2d99dfdba3cfe920aee7c46937eb64",
+            .hash = "12203abe1db56e12ccfc89e1a862759879a17175c0356635f485489ea30e58b070d1",
         },
         .@"zig-eth-secp256k1" = .{
             .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-3.tar.gz",
