@@ -77,19 +77,12 @@ pub const FixtureTest = struct {
         // 2. Execute blocks.
         // const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
         for (self.blocks) |encoded_block| {
+            var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, null, std.mem.zeroes([256]Hash32));
+
             var out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             defer allocator.free(out);
             const rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
-
             const block = try Block.decode(allocator, rlp_bytes);
-
-            // var txns = try allocator.alloc(Txn, encoded_block.transactions.len);
-            // defer allocator.free(txns);
-            // for (encoded_block.transactions, 0..) |tx_hex, i| {
-            //     txns[i] = try tx_hex.to_vm_transaction(allocator, txn_signer);
-            // }
-
-            var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, null, std.mem.zeroes([256]Hash32));
             try chain.runBlock(block);
         }
 
@@ -110,6 +103,7 @@ pub const FixtureTest = struct {
 
             const got_storage = statedb.getAllStorage(exp_account_state.addr) orelse return error.PostStateAccountMustExist;
             if (got_storage.count() != exp_account_state.storage.count()) {
+                log.err("expected storage count {d} but got {d}", .{ exp_account_state.storage.count(), got_storage.count() });
                 return error.PostStateStorageCountMismatch;
             }
             // TODO: check each storage entry matches.
@@ -226,7 +220,6 @@ test "execution-spec-tests" {
 
     var it = ft.tests.value.map.iterator();
     var count: usize = 0;
-
     while (it.next()) |entry| {
         log.debug("##### Executing fixture {s} #####", .{entry.key_ptr.*});
         try std.testing.expect(try entry.value_ptr.*.run(test_allocator));

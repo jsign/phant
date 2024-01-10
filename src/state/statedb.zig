@@ -51,7 +51,7 @@ pub const StateDB = struct {
     }
 
     pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: Bytes32) !void {
-        var account = self.db.get(addr) orelse return error.AccountDoesNotExist;
+        var account = self.db.getPtr(addr) orelse return error.AccountDoesNotExist;
         try account.storage.put(key, value);
     }
 

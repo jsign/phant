@@ -87,9 +87,8 @@ pub const Blockchain = struct {
         var result = try applyBody(allocator, self, self.state, block);
 
         // Post execution checks.
-        if (result.gas_used != block.header.gas_used) {
+        if (result.gas_used != block.header.gas_used)
             return error.InvalidGasUsed;
-        }
         // TODO: disabled until txs root is calculated
         // if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
         //     return error.InvalidTransactionsRoot;
@@ -257,10 +256,10 @@ pub const Blockchain = struct {
             return error.InvalidTransaction;
 
         const sender = env.origin;
-        const sender_account = env.state.getAccount(sender);
 
         const gas_fee = tx.getGasLimit() * tx.getGasPrice();
 
+        var sender_account = env.state.getAccount(sender);
         if (sender_account.nonce != tx.getNonce())
             return error.InvalidTxnNonce;
         if (sender_account.balance < gas_fee + tx.getValue())
@@ -268,8 +267,8 @@ pub const Blockchain = struct {
         if (sender_account.code.len > 0)
             return error.SenderIsNotEOA;
 
-        const effective_gas_fee = tx.getGasLimit() * env.gas_price;
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
+        const effective_gas_fee = tx.getGasLimit() * env.gas_price;
         try env.state.incrementNonce(sender);
 
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
@@ -314,6 +313,7 @@ pub const Blockchain = struct {
         const transaction_fee = (tx.getGasLimit() - output.gas_left) * priority_fee_per_gas;
         const total_gas_used = gas_used - gas_refund;
 
+        sender_account = env.state.getAccount(sender);
         const sender_balance_after_refund = sender_account.balance + gas_refund_amount;
         try env.state.setBalance(sender, sender_balance_after_refund);
 

@@ -118,7 +118,7 @@ const EVMOneHost = struct {
     fn get_tx_context(ctx: ?*evmc.struct_evmc_host_context) callconv(.C) evmc.struct_evmc_tx_context {
         evmclog.debug("get_tx_context", .{});
 
-        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?))); // TODO: alignCast needed?
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         return evmc.struct_evmc_tx_context{
             .tx_gas_price = toEVMCUint256Be(vm.env.gas_price),
             .tx_origin = toEVMCAddress(vm.env.origin),
@@ -133,7 +133,7 @@ const EVMOneHost = struct {
     }
 
     fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, block_number: i64) callconv(.C) evmc.evmc_bytes32 {
-        evmclog.debug("get_tx_context block_number={}", .{block_number});
+        evmclog.debug("get_block_hash block_number={}", .{block_number});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const idx = vm.env.number - @as(u64, @intCast(block_number));
@@ -179,8 +179,9 @@ const EVMOneHost = struct {
             // From EVMC docs: "The VM MUST make sure that the account exists. This requirement is only a formality
             // because VM implementations only modify storage of the account of the current execution context".
             error.AccountDoesNotExist => @panic("set storage in non-existent account"),
-            else => @panic("OOO"),
+            error.OutOfMemory => @panic("OOO"),
         };
+
         return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix https://evmc.ethereum.org/group__EVMC.html#gae012fd6b8e5c23806b507c2d3e9fb1aa
     }
 
@@ -295,9 +296,8 @@ const EVMOneHost = struct {
     }
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
-        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) });
-
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) });
 
         if (msg.*.depth > STACK_DEPTH_LIMIT) {
             return .{
@@ -345,7 +345,6 @@ const EVMOneHost = struct {
 
         const code_address = fromEVMCAddress(msg.*.code_address);
         const code = vm.env.state.getAccount(code_address).code;
-        std.log.warn("codeAddr={} codeBytes={}", .{ std.fmt.fmtSliceHexLower(&code_address), std.fmt.fmtSliceHexLower(code) });
         var result = vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),
@@ -355,11 +354,13 @@ const EVMOneHost = struct {
             code.ptr,
             code.len,
         );
-        evmclog.debug("internal call exec result: status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
 
         if (result.status_code != evmc.EVMC_SUCCESS) {
+            vm.accessed_accounts.deinit();
             vm.accessed_accounts = prev_accessed_accounts;
+            vm.accessed_storage_keys.deinit();
             vm.accessed_storage_keys = prev_accessed_storage_keys;
+            vm.env.state.deinit();
             vm.env.state.* = prev_statedb;
         } else {
             prev_accessed_accounts.deinit();
