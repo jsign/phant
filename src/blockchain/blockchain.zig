@@ -8,6 +8,7 @@ const vm = @import("vm.zig");
 const rlp = @import("zig-rlp");
 const signer = @import("../signer/signer.zig");
 const params = @import("params.zig");
+const blockchain_types = @import("types.zig");
 const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
 const AddresssKey = common.AddressKey;
@@ -15,6 +16,8 @@ const AddressKeySet = common.AddressKeySet;
 const LogsBloom = types.LogsBloom;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
+const Environment = blockchain_types.Environment;
+const Message = blockchain_types.Message;
 const StateDB = @import("../state/statedb.zig").StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
@@ -214,21 +217,6 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    pub const Environment = struct {
-        caller: Address,
-        block_hashes: [256]Hash32,
-        origin: Address,
-        coinbase: Address,
-        number: u64,
-        base_fee_per_gas: u256,
-        gas_limit: u64,
-        gas_price: u256,
-        time: u64,
-        prev_randao: Bytes32,
-        state: *StateDB,
-        chain_id: config.ChainId,
-    };
-
     fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Txn) !struct { gas_used: u64 } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
@@ -348,26 +336,6 @@ pub const Blockchain = struct {
     fn initCodeCost(code_length: usize) u64 {
         return params.gas_init_code_word_const * (code_length + 31) / 32;
     }
-
-    pub const Message = struct {
-        caller: Address,
-        target: ?Address,
-        current_target: Address,
-        gas: u64,
-        value: u256,
-        data: []const u8,
-        code_address: ?Address,
-        code: []const u8,
-        accessed_addresses: AddressSet,
-        accessed_storage_keys: AddressKeySet,
-
-        pub fn deinit(self: *Message) void {
-            self.accessed_addresses.deinit();
-            self.accessed_addresses = undefined;
-            self.accessed_storage_keys.deinit();
-            self.accessed_storage_keys = undefined;
-        }
-    };
 
     // prepareMessage prepares an EVM message.
     // The caller must call deinit() on the returned Message.
