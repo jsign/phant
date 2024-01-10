@@ -38,7 +38,6 @@ pub const TxnSigner = struct {
 
     pub fn get_sender(self: TxnSigner, allocator: Allocator, tx: Txn) !Address {
         const txn_hash = try self.hashTxn(allocator, tx);
-        std.log.warn("FOOOOOO {}", .{std.fmt.fmtSliceHexLower(&txn_hash)});
 
         var sig: ecdsa.Signature = undefined;
 

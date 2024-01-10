@@ -20,7 +20,7 @@ pub const BlockHeader = struct {
     transactions_root: Bytes32,
     receipts_root: Bytes32,
     logs_bloom: LogsBloom,
-    difficulty: u8,
+    difficulty: u64,
     block_number: u64,
     gas_limit: u64,
     gas_used: u64,
@@ -30,8 +30,6 @@ pub const BlockHeader = struct {
     nonce: [8]u8,
     base_fee_per_gas: u256,
     withdrawals_root: ?Hash32,
-    blob_gas_used: ?u64,
-    excess_blob_gas: ?u64,
 };
 
 pub const Block = struct {
@@ -41,7 +39,7 @@ pub const Block = struct {
     withdrawals: []Withdrawal,
 
     pub fn decode(arena: Allocator, rlp_bytes: []const u8) !Block {
-        var block = std.mem.zeroes(Block);
+        var block: Block = undefined;
         _ = try rlp.deserialize(Block, rlp_bytes, &block, arena);
         return block;
     }

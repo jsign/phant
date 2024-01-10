@@ -92,7 +92,7 @@ pub const VM = struct {
                 break :blk .{ .bytes = txn_value };
             },
             .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind.
-            .code_address = undefined, // EVMC docs: field not mandatory for depth 0 calls.
+            .code_address = toEVMCAddress(msg.code_address),
         };
 
         // TODO(improv): we clone here since it's the easiest way to manage ownership of the sets.
@@ -345,6 +345,7 @@ const EVMOneHost = struct {
 
         const code_address = fromEVMCAddress(msg.*.code_address);
         const code = vm.env.state.getAccount(code_address).code;
+        std.log.warn("codeAddr={} codeBytes={}", .{ std.fmt.fmtSliceHexLower(&code_address), std.fmt.fmtSliceHexLower(code) });
         var result = vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),

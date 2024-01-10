@@ -87,8 +87,9 @@ pub const Blockchain = struct {
         var result = try applyBody(allocator, self, self.state, block);
 
         // Post execution checks.
-        if (result.gas_used != block.header.gas_used)
+        if (result.gas_used != block.header.gas_used) {
             return error.InvalidGasUsed;
+        }
         // TODO: disabled until txs root is calculated
         // if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
         //     return error.InvalidTransactionsRoot;
@@ -142,7 +143,7 @@ pub const Blockchain = struct {
 
         if (curr_block.difficulty != 0)
             return error.InvalidDifficulty;
-        if (std.mem.eql(u8, &curr_block.nonce, &[_]u8{0} ** 8))
+        if (!std.mem.eql(u8, &curr_block.nonce, &[_]u8{0} ** 8))
             return error.InvalidNonce;
         if (!std.mem.eql(u8, &curr_block.uncle_hash, &blocks.empty_uncle_hash))
             return error.InvalidUnclesHash;
@@ -172,8 +173,6 @@ pub const Blockchain = struct {
     fn applyBody(allocator: Allocator, chain: Blockchain, state: *StateDB, block: Block) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
-            // TODO: add tx to txs tree.
-
             const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
             const env: Environment = .{
                 .caller = txn_info.sender_address,
