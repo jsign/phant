@@ -29,8 +29,8 @@ pub const precompiled_contract_addresses = [_]Address{
     addressFromInt(9), // BLAKE2F
 };
 
-fn addressFromInt(comptime i: u256) Address {
+fn addressFromInt(comptime i: u160) Address {
     var addr: Address = undefined;
-    std.mem.writeInt(u256, &addr, i, .Big);
+    std.mem.writeInt(u160, &addr, i, .Big);
     return addr;
 }

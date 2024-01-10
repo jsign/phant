@@ -29,7 +29,7 @@ pub const BlockHeader = struct {
     prev_randao: Bytes32,
     nonce: [8]u8,
     base_fee_per_gas: u256,
-    withdrawals_root: ?Hash32,
+    withdrawals_root: Hash32,
 };
 
 pub const Block = struct {

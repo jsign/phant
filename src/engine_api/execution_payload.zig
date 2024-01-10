@@ -28,7 +28,7 @@ pub const ExecutionPayload = struct {
 
     allocator: Allocator,
 
-    pub fn to_block(self: *const ExecutionPayload) types.Block {
+    pub fn toBlock(self: *const ExecutionPayload) types.Block {
         return types.Block{
             .header = types.BlockHeader{
                 .parent_hash = self.parentHash,
@@ -47,7 +47,7 @@ pub const ExecutionPayload = struct {
                 .base_fee_per_gas = self.baseFeePerGas,
                 .transactions_root = [_]u8{0} ** 32,
                 .nonce = [_]u8{0} ** 8,
-                .withdrawals_root = null,
+                .withdrawals_root = [_]u8{0} ** 32,
             },
             .transactions = self.transactions,
             .withdrawals = self.withdrawals,
@@ -70,7 +70,7 @@ pub fn newPayloadV2Handler(params: *ExecutionPayload, allocator: std.mem.Allocat
     // But so far, just print the content of the payload
     std.log.info("newPayloadV2Handler: {any}", .{params});
 
-    var block = params.to_block();
+    var block = params.toBlock();
     std.debug.print("block number={}\n", .{block.header.block_number});
     params.deinit(allocator);
 }

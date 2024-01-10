@@ -254,16 +254,17 @@ pub const FeeMarketTxn = struct {
     }
 };
 
+// TODO: move to common.
 pub fn RLPDecode(comptime T: type, arena: Allocator, bytes: []const u8) !T {
     var ret: T = std.mem.zeroes(T);
     _ = try rlp.deserialize(T, bytes, &ret, arena);
     return ret;
 }
 
-pub fn RLPHash(comptime T: type, allocator: Allocator, txn: T, prefix: ?[]const u8) !Hash32 {
+pub fn RLPHash(comptime T: type, allocator: Allocator, value: T, prefix: ?[]const u8) !Hash32 {
     var out = std.ArrayList(u8).init(allocator);
     defer out.deinit();
-    try rlp.serialize(T, allocator, txn, &out);
+    try rlp.serialize(T, allocator, value, &out);
     if (prefix) |pre| {
         return hasher.keccak256WithPrefix(pre, out.items);
     }

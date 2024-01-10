@@ -79,7 +79,7 @@ pub const Blockchain = struct {
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
     // If isn't valid, it returns an error.
-    fn validateBlockHeader(allocator: Allocator, prev_block: ?BlockHeader, curr_block: BlockHeader) !void {
+    fn validateBlockHeader(allocator: Allocator, prev_block: BlockHeader, curr_block: BlockHeader) !void {
         try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
         if (curr_block.gas_used > curr_block.gas_limit)
             return error.GasLimitExceeded;
@@ -100,7 +100,7 @@ pub const Blockchain = struct {
         if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
             return error.InvalidBaseFee;
 
-        if (curr_block.timestamp > prev_block.timestamp)
+        if (curr_block.timestamp <= prev_block.timestamp)
             return error.InvalidTimestamp;
         if (curr_block.block_number != prev_block.block_number + 1)
             return error.InvalidBlockNumber;
@@ -123,7 +123,7 @@ pub const Blockchain = struct {
         const max_delta = parent_gas_limit / params.gas_limit_adjustement_factor;
         if (gas_limit >= parent_gas_limit + max_delta) return error.GasLimitTooHigh;
         if (gas_limit <= parent_gas_limit - max_delta) return error.GasLimitTooLow;
-        if (gas_limit >= params.gas_limit_minimum) return error.GasLimitLessThanMinimum;
+        if (gas_limit < params.gas_limit_minimum) return error.GasLimitLessThanMinimum;
     }
 
     const BlockExecutionResult = struct {

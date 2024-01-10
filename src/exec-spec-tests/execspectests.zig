@@ -25,9 +25,8 @@ pub const Fixture = struct {
     const FixtureType = std.json.ArrayHashMap(FixtureTest);
     tests: std.json.Parsed(FixtureType),
 
-    pub fn newFromBytes(allocator: Allocator, bytes: []const u8) !Fixture {
+    pub fn fromBytes(allocator: Allocator, bytes: []const u8) !Fixture {
         const tests = try std.json.parseFromSlice(FixtureType, allocator, bytes, std.json.ParseOptions{ .ignore_unknown_fields = true, .allocate = std.json.AllocWhen.alloc_always });
-
         return .{ .tests = tests };
     }
 
@@ -60,36 +59,39 @@ pub const FixtureTest = struct {
         defer arena.deinit();
         var allocator = arena.allocator();
 
-        // 1. We parse the account state "prestate" from the test, and create our
+        // We parse the account state "prestate" from the test, and create our
         // statedb with this initial state of accounts.
         var accounts_state = blk: {
             var accounts_state = try allocator.alloc(AccountState, self.pre.map.count());
             var it = self.pre.map.iterator();
             var i: usize = 0;
             while (it.next()) |entry| {
-                accounts_state[i] = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
+                accounts_state[i] = try entry.value_ptr.*.toAccountState(allocator, entry.key_ptr.*);
                 i = i + 1;
             }
             break :blk accounts_state;
         };
         var statedb = try StateDB.init(allocator, accounts_state);
 
-        // 2. Execute blocks.
-        // const txn_signer = try TxnSigner.init(0); // ChainID == 0 is used in tests.
-        for (self.blocks) |encoded_block| {
-            var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, null, std.mem.zeroes([256]Hash32));
+        // Initialize the blockchain with the preloaded statedb and the genesis
+        // block as the previous block.
+        var out = try allocator.alloc(u8, self.genesisRLP.len / 2);
+        var rlp_bytes = try std.fmt.hexToBytes(out, self.genesisRLP[2..]);
+        const parent_block = try Block.decode(allocator, rlp_bytes);
+        var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
 
-            var out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
-            defer allocator.free(out);
-            const rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
+        // Execute blocks.
+        for (self.blocks) |encoded_block| {
+            out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
+            rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
             const block = try Block.decode(allocator, rlp_bytes);
             try chain.runBlock(block);
         }
 
-        // 3. Verify that the post state matches what the fixture `postState` claims is true.
+        // Verify that the post state matches what the fixture `postState` claims is true.
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
-            var exp_account_state: AccountState = try entry.value_ptr.*.to_vm_accountstate(allocator, entry.key_ptr.*);
+            var exp_account_state: AccountState = try entry.value_ptr.*.toAccountState(allocator, entry.key_ptr.*);
             std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
@@ -147,7 +149,7 @@ pub const TransactionHex = struct {
     data: HexString,
     gasLimit: HexString,
 
-    pub fn to_vm_transaction(self: TransactionHex, allocator: Allocator, txn_signer: TxnSigner) !Txn {
+    pub fn toTx(self: TransactionHex, allocator: Allocator, txn_signer: TxnSigner) !Txn {
         const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
         std.debug.assert(type_ == 0);
         const chain_id = try std.fmt.parseInt(u64, self.chainId[2..], 16);
@@ -184,7 +186,7 @@ pub const AccountStateHex = struct {
 
     // TODO(jsign): add init() and add assertions about lengths.
 
-    pub fn to_vm_accountstate(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
+    pub fn toAccountState(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
         const nonce = try std.fmt.parseInt(u64, self.nonce[2..], 16);
         const balance = try std.fmt.parseInt(u256, self.balance[2..], 16);
 
@@ -215,13 +217,12 @@ const AccountStorageHex = std.json.ArrayHashMap(HexString);
 
 var test_allocator = std.testing.allocator;
 test "execution-spec-tests" {
-    var ft = try Fixture.newFromBytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
+    var ft = try Fixture.fromBytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
     var count: usize = 0;
     while (it.next()) |entry| {
-        log.debug("##### Executing fixture {s} #####", .{entry.key_ptr.*});
         try std.testing.expect(try entry.value_ptr.*.run(test_allocator));
         count += 1;
 
