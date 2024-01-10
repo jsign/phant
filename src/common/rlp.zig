@@ -1,7 +1,7 @@
 const std = @import("std");
 const rlp = @import("zig-rlp");
 const types = @import("../types/types.zig");
-const hasher = @import("../crypto/hasher.zig");
+const hasher = @import("../crypto/crypto.zig").hasher;
 const Allocator = std.mem.Allocator;
 const Hash32 = types.Hash32;
 

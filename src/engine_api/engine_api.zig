@@ -7,7 +7,7 @@ const Withdrawal = types.Withdrawal;
 const Txn = types.Txn;
 const ExecutionPayload = execution_payload.ExecutionPayload;
 
-pub const execution_payload = @import("./execution_payload.zig");
+pub const execution_payload = @import("execution_payload.zig");
 
 // This is an intermediate structure used to deserialize the hex strings
 // from the JSON request. I have seen some zig libraries that can do this
@@ -86,7 +86,7 @@ test "deserialize sample engine_newPayloadV2" {
     const json = std.json;
     const expect = std.testing.expect;
 
-    const filePath = "./src/engine_api/test_req.json";
+    const filePath = "src/engine_api/test_req.json";
 
     const file = try std.fs.cwd().openFile(filePath, .{});
     defer file.close();

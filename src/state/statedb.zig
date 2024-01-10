@@ -1,18 +1,16 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
-const statetypes = @import("types.zig");
-const Bytes32 = types.Bytes32;
+const state = @import("state.zig");
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const AddressSet = common.AddressSet;
 const AddressKey = common.AddressKey;
 const AddressKeySet = common.AddressKeySet;
-
+const AccountData = state.AccountData;
+const AccountState = state.AccountState;
+const Bytes32 = types.Bytes32;
 const log = std.log.scoped(.statedb);
-
-pub const AccountData = statetypes.AccountData;
-pub const AccountState = statetypes.AccountState;
 
 pub const StateDB = struct {
     const AccountDB = std.AutoHashMap(Address, AccountState);

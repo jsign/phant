@@ -21,4 +21,4 @@ pub const Txn = transaction.Txn;
 pub const TxnTypes = transaction.TxnTypes;
 pub const LegacyTxn = transaction.LegacyTxn;
 pub const AccessListTxn = transaction.AccessListTxn;
-pub const MarketFeeTxn = transaction.MarketFeeTxn;
+pub const MarketFeeTxn = transaction.FeeMarketTxn;

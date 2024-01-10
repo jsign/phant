@@ -1,14 +1,15 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const config = @import("../config/config.zig");
-const ecdsa = @import("../crypto/ecdsa.zig");
+const crypto = @import("../crypto/crypto.zig");
+const ecdsa = crypto.ecdsa;
+const hasher = crypto.hasher;
 const types = @import("../types/types.zig");
 const rlp = @import("zig-rlp");
-const hasher = @import("../crypto/hasher.zig");
+const Address = @import("../types/types.zig").Address;
 const AccessListTuple = types.AccessListTuple;
 const Txn = types.Txn;
 const Hash32 = types.Hash32;
-const Address = @import("../types/types.zig").Address;
 
 // TODO: TxnSigner should be generalized to:
 // - Only accept correct transactions types depending on the fork we're in.
