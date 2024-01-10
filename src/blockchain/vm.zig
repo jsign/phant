@@ -4,6 +4,7 @@ const evmc = @cImport({
 const std = @import("std");
 const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
+const params = @import("params.zig");
 const blockchain_types = @import("types.zig");
 const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
@@ -18,19 +19,14 @@ const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 const assert = std.debug.assert;
 
-const STACK_DEPTH_LIMIT = 1024;
 const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
 
 pub const VM = struct {
+    const vmlog = std.log.scoped(.vm);
+
     env: Environment,
     evm: [*c]evmc.evmc_vm,
     host: evmc.struct_evmc_host_interface,
-
-    // Call context scoped variables.
-    accessed_accounts: AddressSet,
-    accessed_storage_keys: AddressKeySet,
-
-    const vmlog = std.log.scoped(.vm);
 
     // init creates a new EVM VM instance. The caller must call deinit() when done.
     pub fn init(env: Environment) VM {
@@ -55,10 +51,6 @@ pub const VM = struct {
                 .access_account = EVMOneHost.access_account,
                 .access_storage = EVMOneHost.access_storage,
             },
-            // TODO: remove this and move it to a "VM instance" or similar which has a
-            // context containing these things, and probably also the (snapshoted) statedb.
-            .accessed_accounts = undefined,
-            .accessed_storage_keys = undefined,
         };
     }
 
@@ -70,7 +62,7 @@ pub const VM = struct {
     }
 
     // processMessageCall executes a message call.
-    pub fn processMessageCall(self: *VM, allocator: Allocator, msg: Message) !evmc.struct_evmc_result {
+    pub fn processMessageCall(self: *VM, msg: Message) !evmc.struct_evmc_result {
         const evmc_message: evmc.struct_evmc_message = .{
             .kind = if (msg.target != null) evmc.EVMC_CALL else evmc.EVMC_CREATE,
             .flags = 0,
@@ -85,22 +77,11 @@ pub const VM = struct {
                 std.mem.writeIntSliceBig(u256, &txn_value, msg.value);
                 break :blk .{ .bytes = txn_value };
             },
-            .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind.
+            .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
             .code_address = toEVMCAddress(msg.code_address),
         };
 
-        // TODO(improv): we clone here since it's the easiest way to manage ownership of the sets.
-        // Quite honestly, it will be better to avoid creating the sets at the caller level and do it here
-        // which would make the ownership problem disappear and avoid the clone. It's a very cheap
-        // clone, but also is simple to avoid it.
-        self.accessed_accounts = try msg.accessed_addresses.cloneWithAllocator(allocator);
-        defer self.accessed_accounts.deinit();
-        self.accessed_storage_keys = try msg.accessed_storage_keys.cloneWithAllocator(allocator);
-        defer self.accessed_storage_keys.deinit();
-
-        const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
-        vmlog.debug("processMessageCall status_code={}, gas_left={}", .{ result.status_code, result.gas_left });
-        return result;
+        return EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
     }
 };
 
@@ -265,9 +246,11 @@ const EVMOneHost = struct {
         evmclog.debug("accessAccount addr=0x{}", .{fmtSliceHexLower(&address)});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        if (vm.accessed_accounts.contains(address))
+        if (vm.env.state.accessedAccountsContains(address))
             return evmc.EVMC_ACCESS_WARM;
-        _ = vm.accessed_accounts.fetchPut(address, {}) catch @panic("OOO");
+        vm.env.state.putAccessedAccount(address) catch |err| switch (err) {
+            error.OutOfMemory => @panic("OOO"),
+        };
 
         return evmc.EVMC_ACCESS_COLD;
     }
@@ -282,9 +265,11 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const address_key: AddressKey = .{ .address = address, .key = key.*.bytes };
-        if (vm.accessed_storage_keys.contains(address_key))
+        if (vm.env.state.accessedStorageKeysContains(address_key))
             return evmc.EVMC_ACCESS_WARM;
-        _ = vm.accessed_storage_keys.fetchPut(address_key, {}) catch @panic("OOO");
+        _ = vm.env.state.putAccessedStorageKeys(address_key) catch |err| switch (err) {
+            error.OutOfMemory => @panic("OOO"),
+        };
 
         return evmc.EVMC_ACCESS_COLD;
     }
@@ -293,7 +278,7 @@ const EVMOneHost = struct {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) });
 
-        if (msg.*.depth > STACK_DEPTH_LIMIT) {
+        if (msg.*.depth > params.stack_depth_limit) {
             return .{
                 .status_code = evmc.EVMC_CALL_DEPTH_EXCEEDED,
                 .gas_left = 0,
@@ -307,11 +292,9 @@ const EVMOneHost = struct {
         }
 
         // Persist current context in case we need it for scope revert.
-        // deinit-ing these sets will happen later if the scope doesn't revert, since we didn't end up
-        // using them.
-        var prev_accessed_accounts = vm.accessed_accounts.clone() catch @panic("OOO");
-        var prev_accessed_storage_keys = vm.accessed_storage_keys.clone() catch @panic("OOO");
-        var prev_statedb = vm.env.state.snapshot() catch @panic("OOO");
+        var prev_statedb = vm.env.state.snapshot() catch |err| switch (err) {
+            error.OutOfMemory => @panic("OOO"),
+        };
 
         // TODO: change env caller?
 
@@ -332,9 +315,13 @@ const EVMOneHost = struct {
                     .padding = [_]u8{0} ** 4,
                 };
             }
-            vm.env.state.setBalance(sender, sender_balance - value) catch @panic("OOO");
+            vm.env.state.setBalance(sender, sender_balance - value) catch |err| switch (err) {
+                error.OutOfMemory => @panic("OOO"),
+            };
             const receipient_balance = vm.env.state.getAccount(fromEVMCAddress(msg.*.recipient)).balance;
-            vm.env.state.setBalance(sender, receipient_balance + value) catch @panic("OOO");
+            vm.env.state.setBalance(sender, receipient_balance + value) catch |err| switch (err) {
+                error.OutOfMemory => @panic("OOO"),
+            };
         }
 
         const code_address = fromEVMCAddress(msg.*.code_address);
@@ -349,18 +336,11 @@ const EVMOneHost = struct {
             code.len,
         );
 
-        if (result.status_code != evmc.EVMC_SUCCESS) {
-            vm.accessed_accounts.deinit();
-            vm.accessed_accounts = prev_accessed_accounts;
-            vm.accessed_storage_keys.deinit();
-            vm.accessed_storage_keys = prev_accessed_storage_keys;
-            vm.env.state.deinit();
-            vm.env.state.* = prev_statedb;
-        } else {
-            prev_accessed_accounts.deinit();
-            prev_accessed_storage_keys.deinit();
+        // If the *CALL failed, we restore the previous statedb.
+        if (result.status_code != evmc.EVMC_SUCCESS)
+            vm.env.state.* = prev_statedb
+        else // otherwise, we free the backup and indireclty commit to the changes that happened.
             prev_statedb.deinit();
-        }
 
         return result;
     }

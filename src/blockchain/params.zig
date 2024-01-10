@@ -17,6 +17,8 @@ pub const base_fee_max_change_denominator = 8;
 pub const elasticity_multiplier = 2;
 pub const max_code_size = 0x6000;
 
+pub const stack_depth_limit = 1024;
+
 pub const precompiled_contract_addresses = [_]Address{
     addressFromInt(1), // ECRECOVER
     addressFromInt(2), // SHA256

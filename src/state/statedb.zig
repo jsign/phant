@@ -1,9 +1,14 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
+const common = @import("../common/common.zig");
 const statetypes = @import("types.zig");
 const Bytes32 = types.Bytes32;
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
+const AddressSet = common.AddressSet;
+const AddressKey = common.AddressKey;
+const AddressKeySet = common.AddressKeySet;
+
 const log = std.log.scoped(.statedb);
 
 pub const AccountData = statetypes.AccountData;
@@ -14,6 +19,8 @@ pub const StateDB = struct {
 
     allocator: Allocator,
     db: AccountDB,
+    accessed_accounts: AddressSet,
+    accessed_storage_keys: AddressKeySet,
 
     pub fn init(allocator: Allocator, accounts: []AccountState) !StateDB {
         var db = AccountDB.init(allocator);
@@ -21,7 +28,12 @@ pub const StateDB = struct {
         for (accounts) |account| {
             db.putAssumeCapacityNoClobber(account.addr, account);
         }
-        return .{ .allocator = allocator, .db = db };
+        return .{
+            .allocator = allocator,
+            .db = db,
+            .accessed_accounts = AddressSet.init(allocator),
+            .accessed_storage_keys = AddressKeySet.init(allocator),
+        };
     }
 
     pub fn deinit(self: *StateDB) void {
@@ -48,6 +60,11 @@ pub const StateDB = struct {
     pub fn getStorage(self: *StateDB, addr: Address, key: u256) Bytes32 {
         const account = self.db.get(addr) orelse return std.mem.zeroes(Bytes32);
         return account.storage.get(key) orelse std.mem.zeroes(Bytes32);
+    }
+
+    pub fn getAllStorage(self: *StateDB, addr: Address) ?std.AutoHashMap(u256, Bytes32) {
+        const account = self.db.get(addr) orelse return null;
+        return account.storage;
     }
 
     pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: Bytes32) !void {
@@ -78,17 +95,30 @@ pub const StateDB = struct {
         return account.nonce == 0 and account.balance == 0 and account.code.len == 0;
     }
 
+    pub fn accessedAccountsContains(self: *StateDB, addr: Address) bool {
+        return self.accessed_accounts.contains(addr);
+    }
+
+    pub fn putAccessedAccount(self: *StateDB, addr: Address) !void {
+        try self.accessed_accounts.putNoClobber(addr, {});
+    }
+
+    pub fn accessedStorageKeysContains(self: *StateDB, addrkey: AddressKey) bool {
+        return self.accessed_storage_keys.contains(addrkey);
+    }
+
+    pub fn putAccessedStorageKeys(self: *StateDB, addrkey: AddressKey) !void {
+        try self.accessed_storage_keys.putNoClobber(addrkey, {});
+    }
+
     pub fn snapshot(self: StateDB) !StateDB {
         // TODO: while simple this is quite inefficient.
         // A much smarter way is doing some "diff" style snapshotting or similar.
         return StateDB{
             .allocator = self.allocator,
             .db = try self.db.cloneWithAllocator(self.allocator),
+            .accessed_accounts = try self.accessed_accounts.cloneWithAllocator(self.allocator),
+            .accessed_storage_keys = try self.accessed_storage_keys.cloneWithAllocator(self.allocator),
         };
-    }
-
-    pub fn getAllStorage(self: *StateDB, addr: Address) ?std.AutoHashMap(u256, Bytes32) {
-        const account = self.db.get(addr) orelse return null;
-        return account.storage;
     }
 };

@@ -10,7 +10,6 @@ const AddresssKey = common.AddressKey;
 const AddressKeySet = common.AddressKeySet;
 
 pub const Environment = struct {
-    caller: Address,
     block_hashes: [256]Hash32,
     origin: Address,
     coinbase: Address,
@@ -33,13 +32,4 @@ pub const Message = struct {
     data: []const u8,
     code_address: ?Address,
     code: []const u8,
-    accessed_addresses: AddressSet,
-    accessed_storage_keys: AddressKeySet,
-
-    pub fn deinit(self: *Message) void {
-        self.accessed_addresses.deinit();
-        self.accessed_addresses = undefined;
-        self.accessed_storage_keys.deinit();
-        self.accessed_storage_keys = undefined;
-    }
 };

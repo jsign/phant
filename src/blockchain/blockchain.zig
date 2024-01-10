@@ -155,7 +155,6 @@ pub const Blockchain = struct {
         for (block.transactions) |tx| {
             const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
             const env: Environment = .{
-                .caller = txn_info.sender_address,
                 .origin = txn_info.sender_address,
                 .block_hashes = chain.last_256_blocks_hashes,
                 .coinbase = block.header.fee_recipient,
@@ -240,18 +239,14 @@ pub const Blockchain = struct {
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
         try env.state.setBalance(sender, sender_balance_after_gas_fee);
 
-        var preaccessed_addresses = AddressSet.init(allocator);
-        defer preaccessed_addresses.deinit();
-        var preaccessed_storage_keys = AddressKeySet.init(allocator);
-        defer preaccessed_storage_keys.deinit();
-        try preaccessed_addresses.put(env.coinbase, {});
+        try env.state.putAccessedAccount(env.coinbase);
         switch (tx) {
             .LegacyTxn => {},
             inline else => |al_tx| {
                 for (al_tx.access_list) |al| {
-                    try preaccessed_addresses.put(al.address, {});
+                    try env.state.putAccessedAccount(al.address);
                     for (al.storage_keys) |key| {
-                        try preaccessed_storage_keys.put(.{ .address = al.address, .key = key }, {});
+                        try env.state.putAccessedStorageKeys(.{ .address = al.address, .key = key });
                     }
                 }
             },
@@ -265,11 +260,8 @@ pub const Blockchain = struct {
             tx.getData(),
             gas,
             env,
-            preaccessed_addresses,
-            preaccessed_storage_keys,
         );
-        defer message.deinit();
-        const output = try processMessageCall(allocator, message, env);
+        const output = try processMessageCall(message, env);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
@@ -347,8 +339,6 @@ pub const Blockchain = struct {
         data: []const u8,
         gas: u64,
         env: Environment,
-        preaccessed_addresses: AddressSet,
-        preaccessed_storage_keys: AddressKeySet,
     ) !Message {
         var current_target: Address = undefined;
         var code_address: Address = undefined;
@@ -366,11 +356,10 @@ pub const Blockchain = struct {
             code = data;
         }
 
-        var accessed_addresses = try preaccessed_addresses.clone();
-        try accessed_addresses.put(current_target, {});
-        try accessed_addresses.put(caller, {});
-        for (params.precompiled_contract_addresses) |address| {
-            try accessed_addresses.put(address, {});
+        try env.state.putAccessedAccount(current_target);
+        try env.state.putAccessedAccount(caller);
+        for (params.precompiled_contract_addresses) |precompile_addr| {
+            try env.state.putAccessedAccount(precompile_addr);
         }
 
         return .{
@@ -382,8 +371,6 @@ pub const Blockchain = struct {
             .data = msg_data,
             .code_address = code_address,
             .code = code,
-            .accessed_addresses = accessed_addresses,
-            .accessed_storage_keys = try preaccessed_storage_keys.clone(),
         };
     }
 
@@ -409,11 +396,11 @@ pub const Blockchain = struct {
         // error TODO (required for future receipts)
     };
 
-    fn processMessageCall(allocator: Allocator, message: Message, env: Environment) !MessageCallOutput {
+    fn processMessageCall(message: Message, env: Environment) !MessageCallOutput {
         var vm_instance = VM.init(env);
         defer vm_instance.deinit();
 
-        const result = try vm_instance.processMessageCall(allocator, message);
+        const result = try vm_instance.processMessageCall(message);
         defer {
             if (result.release) |release| release(&result);
         }
