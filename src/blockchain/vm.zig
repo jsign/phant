@@ -1,4 +1,3 @@
-// TODO(pre-review): check usage of all imports.
 const evmc = @cImport({
     @cInclude("evmone.h");
 });
@@ -12,14 +11,9 @@ const AddressKey = common.AddressKey;
 const AddressKeySet = common.AddressKeySet;
 const Environment = blockchain.Environment;
 const Message = blockchain.Message;
-const Txn = types.Txn;
-const TxnSigner = @import("../signer/signer.zig").TxnSigner;
 const Block = types.Block;
-const AccountState = types.AccountState;
-const Bytecode = types.Bytecode;
 const Hash32 = types.Hash32;
 const Address = types.Address;
-const StateDB = @import("../state/statedb.zig").StateDB;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
 const assert = std.debug.assert;

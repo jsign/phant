@@ -1,8 +1,8 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const rlp = @import("zig-rlp");
-const hasher = @import("../crypto/hasher.zig");
 const types = @import("types.zig");
+const common = @import("../common/common.zig");
+const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const Hash32 = types.Hash32;
 
@@ -157,13 +157,13 @@ pub const LegacyTxn = struct {
     // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
     // output transaction.
     pub fn decode(arena: Allocator, bytes: []const u8) !LegacyTxn {
-        return try RLPDecode(LegacyTxn, arena, bytes);
+        return try common.decodeRLP(LegacyTxn, arena, bytes);
     }
 
     pub fn hash(self: LegacyTxn, allocator: Allocator) !Hash32 {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
-        return try RLPHash(LegacyTxn, allocator, self, null);
+        return try common.decodeRLPAndHash(LegacyTxn, allocator, self, null);
     }
 
     pub fn setSignature(self: *LegacyTxn, v: u256, r: u256, s: u256) void {
@@ -204,7 +204,7 @@ pub const AccessListTxn = struct {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
         const prefix = [_]u8{@intFromEnum(TxnTypes.AccessListTxn)};
-        return try RLPHash(AccessListTxn, allocator, self, &prefix);
+        return try common.decodeRLPAndHash(AccessListTxn, allocator, self, &prefix);
     }
 
     pub fn setSignature(self: *AccessListTxn, v: u256, r: u256, s: u256) void {
@@ -215,7 +215,7 @@ pub const AccessListTxn = struct {
 
     // decode decodes a transaction from bytes.
     pub fn decode(arena: Allocator, bytes: []const u8) !AccessListTxn {
-        return try RLPDecode(AccessListTxn, arena, bytes);
+        return try common.decodeRLP(AccessListTxn, arena, bytes);
     }
 };
 
@@ -237,7 +237,7 @@ pub const FeeMarketTxn = struct {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
         const prefix = [_]u8{@intFromEnum(TxnTypes.FeeMarketTxn)};
-        return try RLPHash(FeeMarketTxn, allocator, self, &prefix);
+        return try common.decodeRLPAndHash(FeeMarketTxn, allocator, self, &prefix);
     }
 
     pub fn setSignature(self: *FeeMarketTxn, v: u256, r: u256, s: u256) void {
@@ -248,26 +248,9 @@ pub const FeeMarketTxn = struct {
 
     // decode decodes a transaction from bytes.
     pub fn decode(arena: Allocator, bytes: []const u8) !FeeMarketTxn {
-        return try RLPDecode(FeeMarketTxn, arena, bytes);
+        return try common.decodeRLP(FeeMarketTxn, arena, bytes);
     }
 };
-
-// TODO: move to common.
-pub fn RLPDecode(comptime T: type, arena: Allocator, bytes: []const u8) !T {
-    var ret: T = std.mem.zeroes(T);
-    _ = try rlp.deserialize(T, arena, bytes, &ret);
-    return ret;
-}
-
-pub fn RLPHash(comptime T: type, allocator: Allocator, value: T, prefix: ?[]const u8) !Hash32 {
-    var out = std.ArrayList(u8).init(allocator);
-    defer out.deinit();
-    try rlp.serialize(T, allocator, value, &out);
-    if (prefix) |pre| {
-        return hasher.keccak256WithPrefix(pre, out.items);
-    }
-    return hasher.keccak256(out.items);
-}
 
 test "Mainnet transactions hashing" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
