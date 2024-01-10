@@ -78,7 +78,7 @@ pub const FixtureTest = struct {
         var out = try allocator.alloc(u8, self.genesisRLP.len / 2);
         var rlp_bytes = try std.fmt.hexToBytes(out, self.genesisRLP[2..]);
         const parent_block = try Block.decode(allocator, rlp_bytes);
-        var chain = blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
+        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
 
         // Execute blocks.
         for (self.blocks) |encoded_block| {

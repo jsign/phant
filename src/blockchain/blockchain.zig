@@ -29,23 +29,25 @@ pub const Blockchain = struct {
     prev_block: BlockHeader,
     last_256_blocks_hashes: [256]Hash32, // ordered in asc order
 
+    // init initializes a blockchain.
+    // The caller **does not** transfer ownership of prev_block.
     pub fn init(
         allocator: Allocator,
         chain_id: config.ChainId,
         state: *StateDB,
         prev_block: BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
-    ) Blockchain {
+    ) !Blockchain {
         return .{
             .allocator = allocator,
             .chain_id = chain_id,
             .state = state,
-            .prev_block = prev_block,
+            .prev_block = try prev_block.clone(allocator),
             .last_256_blocks_hashes = last_256_blocks_hashes,
         };
     }
 
-    pub fn runBlock(self: Blockchain, block: Block) !void {
+    pub fn runBlock(self: *Blockchain, block: Block) !void {
         try validateBlockHeader(self.allocator, self.prev_block, block.header);
         if (block.uncles.len != 0)
             return error.NotEmptyUncles;
@@ -75,6 +77,17 @@ pub const Blockchain = struct {
         // TODO: disabled until withdrawals root is calculated
         // if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root))
         //     return error.InvalidWithdrawalsRoot;
+
+        // Add the current block to the last 256 block hashes.
+        // TODO: this can be done more efficiently with some ring buffer to avoid copying the slice
+        // to make room for the new block hash.
+        std.mem.copyForwards(Hash32, &self.last_256_blocks_hashes, self.last_256_blocks_hashes[1..255]);
+        self.last_256_blocks_hashes[255] = try transaction.RLPHash(BlockHeader, allocator, block.header, null);
+
+        // Note that we free and clone with the Blockchain allocator, and not the arena allocator.
+        // This is required since Blockchain field lifetimes are longer than the block execution processing.
+        self.prev_block.deinit(self.allocator);
+        self.prev_block = try block.header.clone(self.allocator);
     }
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
@@ -134,7 +147,7 @@ pub const Blockchain = struct {
         withdrawals_root: Hash32,
     };
 
-    fn applyBody(allocator: Allocator, chain: Blockchain, state: *StateDB, block: Block) !BlockExecutionResult {
+    fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
             const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
@@ -439,7 +452,6 @@ pub const Blockchain = struct {
         return .{
             .gas_left = @intCast(result.gas_left),
             .refund_counter = @intCast(result.gas_refund),
-            // .accounts_to_delete = AddressKeySet,
         };
     }
 };

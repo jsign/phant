@@ -30,6 +30,17 @@ pub const BlockHeader = struct {
     nonce: [8]u8,
     base_fee_per_gas: u256,
     withdrawals_root: Hash32,
+
+    pub fn clone(self: BlockHeader, allocator: Allocator) !BlockHeader {
+        var ret = self;
+        ret.extra_data = try allocator.dupe(u8, self.extra_data);
+        return ret;
+    }
+
+    pub fn deinit(self: *BlockHeader, allocator: Allocator) void {
+        allocator.free(self.extra_data);
+        self.* = undefined;
+    }
 };
 
 pub const Block = struct {
