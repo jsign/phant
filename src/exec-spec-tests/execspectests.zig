@@ -66,7 +66,7 @@ pub const FixtureTest = struct {
             var it = self.pre.map.iterator();
             var i: usize = 0;
             while (it.next()) |entry| {
-                accounts_state[i] = try entry.value_ptr.*.toAccountState(allocator, entry.key_ptr.*);
+                accounts_state[i] = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
                 i = i + 1;
             }
             break :blk accounts_state;
@@ -91,7 +91,7 @@ pub const FixtureTest = struct {
         // Verify that the post state matches what the fixture `postState` claims is true.
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
-            var exp_account_state: AccountState = try entry.value_ptr.*.toAccountState(allocator, entry.key_ptr.*);
+            var exp_account_state: AccountState = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
             std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
@@ -108,9 +108,13 @@ pub const FixtureTest = struct {
                 log.err("expected storage count {d} but got {d}", .{ exp_account_state.storage.count(), got_storage.count() });
                 return error.PostStateStorageCountMismatch;
             }
-            // TODO: check each storage entry matches.
+            var it_got = got_storage.iterator();
+            while (it_got.next()) |storage_entry| {
+                const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
+                if (!std.mem.eql(u8, storage_entry.value_ptr, &val))
+                    return error.PostStateStorageValueMismatch;
+            }
         }
-        // TODO(jsign): verify gas used.
 
         return true;
     }
@@ -184,15 +188,11 @@ pub const AccountStateHex = struct {
     code: HexString,
     storage: AccountStorageHex,
 
-    // TODO(jsign): add init() and add assertions about lengths.
-
-    pub fn toAccountState(self: *const AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
+    pub fn toAccountState(self: AccountStateHex, allocator: Allocator, addr_hex: []const u8) !AccountState {
         const nonce = try std.fmt.parseInt(u64, self.nonce[2..], 16);
         const balance = try std.fmt.parseInt(u256, self.balance[2..], 16);
 
         var code = try allocator.alloc(u8, self.code[2..].len / 2);
-        // TODO(jsign): check this.
-        //defer allocator.free(code);
         _ = try std.fmt.hexToBytes(code, self.code[2..]);
 
         var addr: Address = undefined;
@@ -223,7 +223,7 @@ test "execution-spec-tests" {
     var it = ft.tests.value.map.iterator();
     var count: usize = 0;
     while (it.next()) |entry| {
-        try std.testing.expect(try entry.value_ptr.*.run(test_allocator));
+        try std.testing.expect(try entry.value_ptr.run(test_allocator));
         count += 1;
 
         // TODO: Only run the first test for now. Then we can enable all and continue with the integration.

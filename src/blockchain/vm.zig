@@ -301,8 +301,6 @@ const EVMOneHost = struct {
             error.OutOfMemory => @panic("OOO"),
         };
 
-        // TODO: change env caller?
-
         // Send value.
         const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
         if (value > 0) {
