@@ -22,6 +22,7 @@ const StateDB = @import("../state/state.zig").StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
+const TxnSigner = signer.TxnSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
@@ -31,6 +32,7 @@ pub const Blockchain = struct {
     state: *StateDB,
     prev_block: BlockHeader,
     last_256_blocks_hashes: [256]Hash32, // ordered in asc order
+    txn_signer: TxnSigner,
 
     // init initializes a blockchain.
     // The caller **does not** transfer ownership of prev_block.
@@ -47,6 +49,7 @@ pub const Blockchain = struct {
             .state = state,
             .prev_block = try prev_block.clone(allocator),
             .last_256_blocks_hashes = last_256_blocks_hashes,
+            .txn_signer = try signer.TxnSigner.init(@intFromEnum(chain_id)),
         };
     }
 
@@ -60,7 +63,7 @@ pub const Blockchain = struct {
         const allocator = arena.allocator();
 
         // Execute block.
-        var result = try applyBody(allocator, self, self.state, block);
+        var result = try applyBody(allocator, self, self.state, block, self.txn_signer);
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used)
@@ -150,10 +153,10 @@ pub const Blockchain = struct {
         withdrawals_root: Hash32,
     };
 
-    fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block) !BlockExecutionResult {
+    fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, txn_signer: TxnSigner) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
-            const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, chain.chain_id);
+            const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, txn_signer);
             const env: Environment = .{
                 .origin = txn_info.sender_address,
                 .block_hashes = chain.last_256_blocks_hashes,
@@ -190,11 +193,10 @@ pub const Blockchain = struct {
         };
     }
 
-    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u256, gas_available: u64, chain_id: config.ChainId) !struct { sender_address: Address, effective_gas_price: u256 } {
+    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u256, gas_available: u64, txn_signer: TxnSigner) !struct { sender_address: Address, effective_gas_price: u256 } {
         if (tx.getGasLimit() > gas_available)
             return error.InsufficientGas;
 
-        const txn_signer = try signer.TxnSigner.init(@intFromEnum(chain_id));
         const sender_address = try txn_signer.get_sender(allocator, tx);
 
         const effective_gas_price = switch (tx) {
