@@ -68,9 +68,10 @@ pub fn newPayloadV2Handler(params: *ExecutionPayload, allocator: std.mem.Allocat
     // vm.run_block(params.to_block(), params.transactions);
 
     // But so far, just print the content of the payload
-    std.log.info("newPayloadV2Handler: {any}", .{params});
+    // std.log.info("newPayloadV2Handler: {any}", .{params});
 
     var block = params.toBlock();
-    std.debug.print("block number={}\n", .{block.header.block_number});
+    _ = block;
+    // std.debug.print("block number={}\n", .{block.header.block_number});
     params.deinit(allocator);
 }
