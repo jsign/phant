@@ -157,6 +157,8 @@ pub const Blockchain = struct {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
             const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, txn_signer);
+
+            try state.startTx();
             const env: Environment = .{
                 .origin = txn_info.sender_address,
                 .block_hashes = chain.last_256_blocks_hashes,

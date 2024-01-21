@@ -17,6 +17,9 @@ pub const StateDB = struct {
 
     allocator: Allocator,
     db: AccountDB,
+
+    // Tx scoped variables.
+    original_db: ?AccountDB = null,
     accessed_accounts: AddressSet,
     accessed_storage_keys: AddressKeySet,
 
@@ -36,6 +39,17 @@ pub const StateDB = struct {
 
     pub fn deinit(self: *StateDB) void {
         self.db.deinit();
+        self.accessed_accounts.deinit();
+        self.accessed_storage_keys.deinit();
+    }
+
+    pub fn startTx(self: *StateDB) !void {
+        if (self.original_db) |*original_db| {
+            original_db.deinit();
+            original_db.* = try self.db.clone();
+        }
+        self.accessed_accounts.clearRetainingCapacity();
+        self.accessed_storage_keys.clearRetainingCapacity();
     }
 
     pub fn getAccountOpt(self: *StateDB, addr: Address) ?AccountData {
