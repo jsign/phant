@@ -321,8 +321,8 @@ const EVMOneHost = struct {
             vm.env.state.setBalance(sender, sender_balance - value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
-            const receipient_balance = vm.env.state.getAccount(fromEVMCAddress(msg.*.recipient)).balance;
-            vm.env.state.setBalance(sender, receipient_balance + value) catch |err| switch (err) {
+            const recipient_balance = vm.env.state.getAccount(fromEVMCAddress(msg.*.recipient)).balance;
+            vm.env.state.setBalance(sender, recipient_balance + value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
         }
@@ -345,6 +345,7 @@ const EVMOneHost = struct {
         else // otherwise, we free the backup and indireclty commit to the changes that happened.
             prev_statedb.deinit();
 
+        evmclog.debug("call() depth={d} ended", .{msg.*.depth});
         return result;
     }
 };
