@@ -152,7 +152,72 @@ const EVMOneHost = struct {
         evmclog.debug("setStorage addr=0x{} key={} value={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes), fmtSliceHexLower(&value.*.bytes) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+
         const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
+        const storage_status: evmc.enum_evmc_storage_status = blk: {
+            const original_value = vm.env.state.getOriginalStorage(address, k);
+            const current_value = vm.env.state.getStorage(address, k);
+            const new_value = value.*.bytes;
+            const zero = std.mem.zeroes([32]u8);
+
+            // See: https://evmc.ethereum.org/group__EVMC.html#gae012fd6b8e5c23806b507c2d3e9fb1aa
+
+            // EIP-220: 2.
+            if (std.mem.eql(u8, &current_value, &new_value)) {
+                break :blk evmc.EVMC_STORAGE_ASSIGNED;
+            }
+            // EIP-220: 3.
+
+            // EIP-220: 3.1
+            if (std.mem.eql(u8, &original_value, &current_value)) {
+                // EIP-220: 3.1.1
+                if (std.mem.eql(u8, &original_value, &zero)) {
+                    // 0->0->Z
+                    break :blk evmc.EVMC_STORAGE_ADDED;
+                }
+                if (std.mem.eql(u8, &new_value, &zero)) {
+                    // X->X->0
+                    break :blk evmc.EVMC_STORAGE_DELETED;
+                }
+                // X->X->Z
+                break :blk evmc.EVMC_STORAGE_MODIFIED;
+            }
+
+            // EIP-220: 3.2
+            // X != Y
+
+            // EIP-220: 3.2.1
+            if (!std.mem.eql(u8, &original_value, &zero)) {
+                // EIP-220: 3.2.1.1
+                if (std.mem.eql(u8, &current_value, &zero)) {
+                    // X->0->Z
+                    break :blk evmc.EVMC_STORAGE_DELETED_ADDED;
+                }
+                // EIP-220: 3.2.1.2
+                if (std.mem.eql(u8, &new_value, &zero)) {
+                    // X->Y->0
+                    break :blk evmc.EVMC_STORAGE_MODIFIED_DELETED;
+                }
+            }
+
+            // EIP-220: 3.2.2
+            if (std.mem.eql(u8, &original_value, &new_value)) {
+                if (std.mem.eql(u8, &current_value, &zero)) {
+                    // X->0->X
+                    break :blk evmc.EVMC_STORAGE_DELETED_RESTORED;
+                }
+                // EIP-220: 3.2.2.1
+                if (std.mem.eql(u8, &original_value, &zero)) {
+                    // 0->Y->0
+                    break :blk evmc.EVMC_STORAGE_ADDED_DELETED;
+                }
+                // X->Y->X
+                break :blk evmc.EVMC_STORAGE_MODIFIED_RESTORED;
+            }
+
+            break :blk evmc.EVMC_STORAGE_ASSIGNED;
+        };
+
         vm.env.state.setStorage(address, k, value.*.bytes) catch |err| switch (err) {
             // From EVMC docs: "The VM MUST make sure that the account exists. This requirement is only a formality
             // because VM implementations only modify storage of the account of the current execution context".
@@ -160,7 +225,7 @@ const EVMOneHost = struct {
             error.OutOfMemory => @panic("OOO"),
         };
 
-        return evmc.EVMC_STORAGE_ADDED; // TODO(jsign): fix https://evmc.ethereum.org/group__EVMC.html#gae012fd6b8e5c23806b507c2d3e9fb1aa
+        return storage_status;
     }
 
     fn get_balance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_uint256be {

@@ -41,13 +41,16 @@ pub const StateDB = struct {
         self.db.deinit();
         self.accessed_accounts.deinit();
         self.accessed_storage_keys.deinit();
+        if (self.original_db) |*original_db| {
+            original_db.deinit();
+        }
     }
 
     pub fn startTx(self: *StateDB) !void {
         if (self.original_db) |*original_db| {
             original_db.deinit();
-            original_db.* = try self.db.clone();
         }
+        self.original_db = try self.db.clone();
         self.accessed_accounts.clearRetainingCapacity();
         self.accessed_storage_keys.clearRetainingCapacity();
     }
@@ -71,6 +74,11 @@ pub const StateDB = struct {
 
     pub fn getStorage(self: *StateDB, addr: Address, key: u256) Bytes32 {
         const account = self.db.get(addr) orelse return std.mem.zeroes(Bytes32);
+        return account.storage.get(key) orelse std.mem.zeroes(Bytes32);
+    }
+
+    pub fn getOriginalStorage(self: *StateDB, addr: Address, key: u256) Bytes32 {
+        const account = self.original_db.?.get(addr) orelse return std.mem.zeroes(Bytes32);
         return account.storage.get(key) orelse std.mem.zeroes(Bytes32);
     }
 
@@ -128,9 +136,10 @@ pub const StateDB = struct {
         // A much smarter way is doing some "diff" style snapshotting or similar.
         return StateDB{
             .allocator = self.allocator,
-            .db = try self.db.cloneWithAllocator(self.allocator),
-            .accessed_accounts = try self.accessed_accounts.cloneWithAllocator(self.allocator),
-            .accessed_storage_keys = try self.accessed_storage_keys.cloneWithAllocator(self.allocator),
+            .db = try self.db.clone(),
+            .original_db = try self.original_db.?.clone(),
+            .accessed_accounts = try self.accessed_accounts.clone(),
+            .accessed_storage_keys = try self.accessed_storage_keys.clone(),
         };
     }
 };
