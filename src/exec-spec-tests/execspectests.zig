@@ -226,9 +226,5 @@ test "execution-spec-tests" {
     while (it.next()) |entry| {
         try std.testing.expect(try entry.value_ptr.run(allocator));
         count += 1;
-
-        if (count == 2) {
-            break;
-        }
     }
 }
