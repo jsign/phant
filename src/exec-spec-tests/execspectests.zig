@@ -224,9 +224,7 @@ test "execution-spec-tests" {
     var it = ft.tests.value.map.iterator();
     var count: usize = 0;
     while (it.next()) |entry| {
-        if (count == 1) {
-            try std.testing.expect(try entry.value_ptr.run(allocator));
-        }
+        try std.testing.expect(try entry.value_ptr.run(allocator));
         count += 1;
 
         if (count == 2) {

@@ -366,6 +366,8 @@ const EVMOneHost = struct {
             error.OutOfMemory => @panic("OOO"),
         };
 
+        const recipient_addr = fromEVMCAddress(msg.*.recipient);
+
         // Send value.
         const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
         if (value > 0) {
@@ -386,7 +388,7 @@ const EVMOneHost = struct {
             vm.env.state.setBalance(sender, sender_balance - value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
-            const recipient_balance = vm.env.state.getAccount(fromEVMCAddress(msg.*.recipient)).balance;
+            const recipient_balance = vm.env.state.getAccount(recipient_addr).balance;
             vm.env.state.setBalance(sender, recipient_balance + value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
@@ -404,11 +406,19 @@ const EVMOneHost = struct {
             code.len,
         );
 
-        // If the *CALL failed, we restore the previous statedb.
-        if (result.status_code != evmc.EVMC_SUCCESS)
-            vm.env.state.* = prev_statedb
-        else // otherwise, we free the backup and indireclty commit to the changes that happened.
+        if (result.status_code == evmc.EVMC_SUCCESS) {
+            // Free the backup and indireclty commit to the changes that happened.
             prev_statedb.deinit();
+
+            // EIP-158.
+            if (vm.env.state.isEmpty(recipient_addr))
+                vm.env.state.addTouchedAddress(recipient_addr) catch |err| switch (err) {
+                    error.OutOfMemory => @panic("OOO"),
+                };
+        } else {
+            // If the *CALL failed, we restore the previous statedb.
+            vm.env.state.* = prev_statedb;
+        }
 
         evmclog.debug("call() depth={d} ended", .{msg.*.depth});
         return result;

@@ -290,7 +290,12 @@ pub const Blockchain = struct {
 
         // TODO: self destruct processing
         // for address in output.accounts_to_delete:
-        // destroy_account(env.state, address)
+        //  destroy_account(env.state, address)
+
+        for (env.state.touched_addresses.items) |address| {
+            if (env.state.isEmpty(address))
+                env.state.destroyAccount(address);
+        }
 
         return .{ .gas_used = total_gas_used };
     }

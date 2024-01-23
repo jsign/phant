@@ -10,16 +10,22 @@ const AddressKeySet = common.AddressKeySet;
 const AccountData = state.AccountData;
 const AccountState = state.AccountState;
 const Bytes32 = types.Bytes32;
+const ArrayList = std.ArrayList;
 const log = std.log.scoped(.statedb);
 
 pub const StateDB = struct {
     const AccountDB = std.AutoHashMap(Address, AccountState);
 
     allocator: Allocator,
+    // original_db contains the state of the world when the transaction starts.
+    // It assists in charging the right amount of gas for SSTORE.
+    original_db: ?AccountDB = null,
+    // db contains the state of the world while the current transaction is executing.
+    // (i.e: current call scope)
     db: AccountDB,
 
-    // Tx scoped variables.
-    original_db: ?AccountDB = null,
+    // Tx-scoped lists.
+    touched_addresses: ArrayList(Address),
     accessed_accounts: AddressSet,
     accessed_storage_keys: AddressKeySet,
 
@@ -34,6 +40,7 @@ pub const StateDB = struct {
             .db = db,
             .accessed_accounts = AddressSet.init(allocator),
             .accessed_storage_keys = AddressKeySet.init(allocator),
+            .touched_addresses = ArrayList(Address).init(allocator),
         };
     }
 
@@ -55,7 +62,16 @@ pub const StateDB = struct {
         self.accessed_storage_keys.clearRetainingCapacity();
     }
 
-    pub fn getAccountOpt(self: *StateDB, addr: Address) ?AccountData {
+    pub fn isEmpty(self: StateDB, addr: Address) bool {
+        const account = self.getAccountOpt(addr) orelse return false;
+        return account.nonce == 0 and account.code.len == 0 and account.balance == 0;
+    }
+
+    pub fn addTouchedAddress(self: *StateDB, addr: Address) !void {
+        try self.touched_addresses.append(addr);
+    }
+
+    pub fn getAccountOpt(self: StateDB, addr: Address) ?AccountData {
         const account_data = self.db.get(addr) orelse return null;
         return .{
             .nonce = account_data.nonce,
@@ -89,6 +105,10 @@ pub const StateDB = struct {
 
     pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: Bytes32) !void {
         var account = self.db.getPtr(addr) orelse return error.AccountDoesNotExist;
+        if (std.mem.eql(u8, &value, &std.mem.zeroes(Bytes32))) {
+            _ = account.storage.remove(key);
+            return;
+        }
         try account.storage.put(key, value);
     }
 
@@ -140,6 +160,7 @@ pub const StateDB = struct {
             .original_db = try self.original_db.?.clone(),
             .accessed_accounts = try self.accessed_accounts.clone(),
             .accessed_storage_keys = try self.accessed_storage_keys.clone(),
+            .touched_addresses = try self.touched_addresses.clone(),
         };
     }
 };
