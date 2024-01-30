@@ -17,8 +17,8 @@ pub const Withdrawal = @import("withdrawal.zig").Withdrawal;
 // Transactions
 const transaction = @import("transaction.zig");
 pub const AccessListTuple = transaction.AccessListTuple;
-pub const Txn = transaction.Txn;
-pub const TxnTypes = transaction.TxnTypes;
-pub const LegacyTxn = transaction.LegacyTxn;
-pub const AccessListTxn = transaction.AccessListTxn;
-pub const MarketFeeTxn = transaction.FeeMarketTxn;
+pub const Tx = transaction.Tx;
+pub const TxTypes = transaction.TxTypes;
+pub const LegacyTx = transaction.LegacyTx;
+pub const AccessListTx = transaction.AccessListTx;
+pub const MarketFeeTx = transaction.FeeMarketTx;

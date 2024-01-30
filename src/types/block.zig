@@ -4,7 +4,7 @@ const types = @import("types.zig");
 const Allocator = std.mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
 const Withdrawal = types.Withdrawal;
-const Txn = types.Txn;
+const Tx = types.Tx;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
@@ -45,7 +45,7 @@ pub const BlockHeader = struct {
 
 pub const Block = struct {
     header: BlockHeader,
-    transactions: []Txn,
+    transactions: []Tx,
     uncles: []BlockHeader,
     withdrawals: []Withdrawal,
 

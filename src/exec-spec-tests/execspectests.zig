@@ -6,12 +6,12 @@ const blockchain = @import("../blockchain/blockchain.zig");
 const vm = @import("../blockchain/vm.zig");
 const ecdsa = @import("../crypto/crypto.zig").ecdsa;
 const state = @import("../state/state.zig");
-const TxnSigner = @import("../signer/signer.zig").TxnSigner;
+const TxSigner = @import("../signer/signer.zig").TxSigner;
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
-const Txn = types.Txn;
+const Tx = types.Tx;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const VM = vm.VM;
@@ -153,11 +153,11 @@ pub const TransactionHex = struct {
     data: HexString,
     gasLimit: HexString,
 
-    pub fn toTx(self: TransactionHex, allocator: Allocator, txn_signer: TxnSigner) !Txn {
+    pub fn toTx(self: TransactionHex, allocator: Allocator, tx_signer: TxSigner) !Tx {
         const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
         std.debug.assert(type_ == 0);
         const chain_id = try std.fmt.parseInt(u64, self.chainId[2..], 16);
-        if (chain_id != txn_signer.chain_id) {
+        if (chain_id != tx_signer.chain_id) {
             return error.InvalidChainId;
         }
         const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
@@ -172,13 +172,13 @@ pub const TransactionHex = struct {
         _ = try std.fmt.hexToBytes(data, self.data[2..]);
         const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
 
-        var txn = Txn.initLegacyTxn(nonce, gas_price, value, to, data, gas_limit);
+        var tx = Tx.initLegacyTx(nonce, gas_price, value, to, data, gas_limit);
         var privkey: ecdsa.PrivateKey = undefined;
         _ = try std.fmt.hexToBytes(&privkey, self.secretKey[2..]);
-        const sig = try txn_signer.sign(allocator, txn, privkey);
-        txn.setSignature(sig.v, sig.r, sig.s);
+        const sig = try tx_signer.sign(allocator, tx, privkey);
+        tx.setSignature(sig.v, sig.r, sig.s);
 
-        return txn;
+        return tx;
     }
 };
 
