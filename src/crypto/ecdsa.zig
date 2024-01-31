@@ -25,6 +25,16 @@ pub const Signer = struct {
     }
 };
 
+pub fn validateSignatureFields(r: u256, s: u256) !void {
+    if (r > secp256k1.Secp256k1.order) {
+        return error.InvalidR;
+    }
+    // Malleability check.
+    if (s > secp256k1.Secp256k1.order / 2) {
+        return error.InvalidS;
+    }
+}
+
 // The following test values where generated using geth, as a reference.
 const hashed_msg = common.comptimeHexToBytes("05e0e0ff09b01e5626daac3165b82afa42be29197b82e8a5a8800740ee7519d2");
 const private_key = common.comptimeHexToBytes("f457cd3bd0186e342d243ea40ad78fe8e81743f90852e87074e68d8c94c2a42e");

@@ -42,9 +42,10 @@ pub const TxSigner = struct {
 
         var sig: ecdsa.Signature = undefined;
 
-        // TODO: solve malleability problem.
         sig[64] = switch (tx) {
             Tx.LegacyTx => |itx| blk: {
+                try ecdsa.validateSignatureFields(itx.r, itx.s);
+
                 std.mem.writeIntSlice(u256, sig[0..32], itx.r, std.builtin.Endian.Big);
                 std.mem.writeIntSlice(u256, sig[32..64], itx.s, std.builtin.Endian.Big);
 
@@ -58,11 +59,15 @@ pub const TxSigner = struct {
                 break :blk @intCast(itx.v - v_eip155);
             },
             Tx.AccessListTx => |itx| blk: {
+                try ecdsa.validateSignatureFields(itx.r, itx.s);
+
                 std.mem.writeIntSlice(u256, sig[0..32], itx.r, std.builtin.Endian.Big);
                 std.mem.writeIntSlice(u256, sig[32..64], itx.s, std.builtin.Endian.Big);
                 break :blk @intCast(itx.y_parity);
             },
             Tx.FeeMarketTx => |itx| blk: {
+                try ecdsa.validateSignatureFields(itx.r, itx.s);
+
                 std.mem.writeIntSlice(u256, sig[0..32], itx.r, std.builtin.Endian.Big);
                 std.mem.writeIntSlice(u256, sig[32..64], itx.s, std.builtin.Endian.Big);
                 break :blk @intCast(itx.y_parity);
