@@ -62,7 +62,7 @@ pub const VM = struct {
     }
 
     // processMessageCall executes a message call.
-    pub fn processMessageCall(self: *VM, msg: Message) !evmc.struct_evmc_result {
+    pub fn processMessageCall(self: *VM, msg: Message) !MessageCallOutput {
         const evmc_message: evmc.struct_evmc_message = .{
             .kind = if (msg.target != null) evmc.EVMC_CALL else evmc.EVMC_CREATE,
             .flags = 0,
@@ -81,7 +81,15 @@ pub const VM = struct {
             .code_address = toEVMCAddress(msg.code_address),
         };
 
-        return EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
+        const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
+        defer {
+            if (result.release) |release| release(&result);
+        }
+        return .{
+            .gas_left = @intCast(result.gas_left),
+            .refund_counter = @intCast(result.gas_refund),
+            .success = result.status_code == evmc.EVMC_SUCCESS,
+        };
     }
 };
 
@@ -459,3 +467,11 @@ fn toEVMCUint256Be(num: u256) evmc.evmc_uint256be {
         },
     };
 }
+
+pub const MessageCallOutput = struct {
+    success: bool,
+    gas_left: u64,
+    refund_counter: u64,
+    // logs: Union[Tuple[()], Tuple[Log, ...]] TODO
+    // accounts_to_delete: AddressKeySet, // TODO (delete?)
+};
