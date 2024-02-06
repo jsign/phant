@@ -1,4 +1,5 @@
 pub const ChainId = enum(u64) {
+    SpecTest = 0,
     Mainnet = 1,
     Goerli = 5,
     Holesky = 17000,

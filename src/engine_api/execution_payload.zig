@@ -1,6 +1,9 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
 const Allocator = std.mem.Allocator;
+const BlockHeader = types.BlockHeader;
+const Withdrawal = types.Withdrawal;
+const Txn = types.Txn;
 
 pub const ExecutionPayload = struct {
     parentHash: types.Hash32,
@@ -16,16 +19,16 @@ pub const ExecutionPayload = struct {
     extraData: []const u8,
     baseFeePerGas: u256,
     blockHash: types.Hash32,
-    transactions: [][]const u8,
+    transactions: []Txn,
 
-    withdrawals: ?[]types.Withdrawal,
+    withdrawals: []types.Withdrawal,
     blobGasUsed: ?u64,
     excessBlobGas: ?u64,
     // executionWitness : ?types.ExecutionWitness,
 
     allocator: Allocator,
 
-    pub fn to_block(self: *const ExecutionPayload) types.Block {
+    pub fn toBlock(self: *const ExecutionPayload) types.Block {
         return types.Block{
             .header = types.BlockHeader{
                 .parent_hash = self.parentHash,
@@ -34,6 +37,7 @@ pub const ExecutionPayload = struct {
                 .state_root = self.stateRoot,
                 .receipts_root = self.receiptsRoot,
                 .logs_bloom = self.logsBloom,
+                .difficulty = 0,
                 .prev_randao = self.prevRandao,
                 .block_number = @intCast(self.blockNumber),
                 .gas_limit = @intCast(self.gasLimit),
@@ -42,15 +46,12 @@ pub const ExecutionPayload = struct {
                 .extra_data = self.extraData,
                 .base_fee_per_gas = self.baseFeePerGas,
                 .transactions_root = [_]u8{0} ** 32,
-                .mix_hash = 0,
                 .nonce = [_]u8{0} ** 8,
-                .blob_gas_used = null,
-                .withdrawals_root = null,
-                .excess_blob_gas = null,
+                .withdrawals_root = [_]u8{0} ** 32,
             },
-            // .blockHash = self.blockHash,
-            // .transactions = self.transactions,
-            // .withdrawals = self.withdrawals,
+            .transactions = self.transactions,
+            .withdrawals = self.withdrawals,
+            .uncles = &[0]BlockHeader{},
         };
     }
 
@@ -69,7 +70,7 @@ pub fn newPayloadV2Handler(params: *ExecutionPayload, allocator: std.mem.Allocat
     // But so far, just print the content of the payload
     std.log.info("newPayloadV2Handler: {any}", .{params});
 
-    var block = params.to_block();
+    var block = params.toBlock();
     std.debug.print("block number={}\n", .{block.header.block_number});
     params.deinit(allocator);
 }

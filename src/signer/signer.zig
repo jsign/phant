@@ -1,19 +1,18 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const config = @import("../config/config.zig");
-const ecdsa = @import("../crypto/ecdsa.zig");
+const crypto = @import("../crypto/crypto.zig");
+const ecdsa = crypto.ecdsa;
+const hasher = crypto.hasher;
 const types = @import("../types/types.zig");
 const rlp = @import("zig-rlp");
-const hasher = @import("../crypto/hasher.zig");
+const Address = @import("../types/types.zig").Address;
 const AccessListTuple = types.AccessListTuple;
 const Txn = types.Txn;
 const Hash32 = types.Hash32;
-const Address = @import("../types/types.zig").Address;
 
 // TODO: TxnSigner should be generalized to:
 // - Only accept correct transactions types depending on the fork we're in.
-// - Handle "v" correctly depending on transaction type.
-// For now it's a post London signer, and only support 1559 txns.
 pub const TxnSigner = struct {
     chain_id: u64,
     ecdsa_signer: ecdsa.Signer,
@@ -77,30 +76,52 @@ pub const TxnSigner = struct {
     fn hashTxn(self: TxnSigner, allocator: Allocator, transaction: Txn) !Hash32 {
         return switch (transaction) {
             Txn.LegacyTxn => |txn| blk: {
-                // Txn encoding using EIP-155 (since ~Nov 2016).
-                const legacyTxnRLP = struct {
-                    nonce: u64,
-                    gas_price: u256,
-                    gas_limit: u64,
-                    to: ?Address,
-                    value: u256,
-                    data: []const u8,
-                    chain_id: u64,
-                    zero1: u8 = 0,
-                    zero2: u8 = 0,
-                };
-
                 var out = std.ArrayList(u8).init(allocator);
                 defer out.deinit();
-                try rlp.serialize(legacyTxnRLP, allocator, .{
-                    .nonce = txn.nonce,
-                    .gas_price = txn.gas_price,
-                    .gas_limit = txn.gas_limit,
-                    .to = txn.to,
-                    .value = txn.value,
-                    .data = txn.data,
-                    .chain_id = self.chain_id,
-                }, &out);
+
+                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest)) {
+                    // Post EIP-155 (since ~Nov 2016).
+                    const legacyTxnRLP = struct {
+                        nonce: u64,
+                        gas_price: u256,
+                        gas_limit: u64,
+                        to: ?Address,
+                        value: u256,
+                        data: []const u8,
+                        chain_id: u64,
+                        zero1: u8 = 0,
+                        zero2: u8 = 0,
+                    };
+
+                    try rlp.serialize(legacyTxnRLP, allocator, .{
+                        .nonce = txn.nonce,
+                        .gas_price = txn.gas_price,
+                        .gas_limit = txn.gas_limit,
+                        .to = txn.to,
+                        .value = txn.value,
+                        .data = txn.data,
+                        .chain_id = self.chain_id,
+                    }, &out);
+                } else {
+                    // Pre EIP-155.
+                    const legacyTxnRLP = struct {
+                        nonce: u64,
+                        gas_price: u256,
+                        gas_limit: u64,
+                        to: ?Address,
+                        value: u256,
+                        data: []const u8,
+                    };
+
+                    try rlp.serialize(legacyTxnRLP, allocator, .{
+                        .nonce = txn.nonce,
+                        .gas_price = txn.gas_price,
+                        .gas_limit = txn.gas_limit,
+                        .to = txn.to,
+                        .value = txn.value,
+                        .data = txn.data,
+                    }, &out);
+                }
 
                 break :blk hasher.keccak256(out.items);
             },
@@ -109,7 +130,7 @@ pub const TxnSigner = struct {
                     chain_id: u64,
                     nonce: u256,
                     max_priority_fee_per_gas: u64,
-                    max_fee_per_gas: u64,
+                    max_fee_per_gas: u256,
                     gas: u64,
                     to: ?Address,
                     value: u256,
@@ -162,7 +183,9 @@ pub const TxnSigner = struct {
     }
 };
 
-test "Mainnet transactions signature recovery/verification" {
+test "mainnet transactions signature recovery/verification" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
     const testCase = struct {
         rlp_encoded: []const u8,
         expected_sender: []const u8,
@@ -185,7 +208,7 @@ test "Mainnet transactions signature recovery/verification" {
     inline for (test_cases) |testcase| {
         var txn_bytes: [testcase.rlp_encoded.len / 2]u8 = undefined;
         _ = try std.fmt.hexToBytes(&txn_bytes, testcase.rlp_encoded);
-        const txn = try Txn.decode(&txn_bytes);
+        const txn = try Txn.decode(arena.allocator(), &txn_bytes);
 
         const signer = try TxnSigner.init(@intFromEnum(config.ChainId.Mainnet));
         const sender = try signer.get_sender(std.testing.allocator, txn);

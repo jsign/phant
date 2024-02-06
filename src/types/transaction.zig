@@ -1,8 +1,8 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const rlp = @import("zig-rlp");
-const hasher = @import("../crypto/hasher.zig");
 const types = @import("types.zig");
+const common = @import("../common/common.zig");
+const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const Hash32 = types.Hash32;
 
@@ -24,22 +24,36 @@ pub const Txn = union(TxnTypes) {
     }
 
     // decode decodes a transaction from bytes. The provided bytes are referenced in the returned transaction.
-    pub fn decode(bytes: []const u8) !Txn {
+    pub fn decode(arena: Allocator, bytes: []const u8) !Txn {
         if (bytes.len == 0) {
             return error.EncodedTxnCannotBeEmpty;
         }
 
         // EIP-2718: Transaction Type Transaction
         if (bytes[0] <= 0x7f) {
-            if (bytes[0] == 0x01) return Txn{ .AccessListTxn = try AccessListTxn.decode(bytes[1..]) };
-            if (bytes[0] == 0x02) return Txn{ .FeeMarketTxn = try FeeMarketTxn.decode(bytes[1..]) };
+            if (bytes[0] == 0x01) return Txn{ .AccessListTxn = try AccessListTxn.decode(arena, bytes[1..]) };
+            if (bytes[0] == 0x02) return Txn{ .FeeMarketTxn = try FeeMarketTxn.decode(arena, bytes[1..]) };
             return error.UnsupportedEIP2930TxnType;
         }
 
         // LegacyTxn
-        if (bytes[0] >= 0xc0 and bytes[0] <= 0xfe) return Txn{ .LegacyTxn = try LegacyTxn.decode(bytes) };
+        if (bytes[0] >= 0xc0 and bytes[0] <= 0xfe) return Txn{ .LegacyTxn = try LegacyTxn.decode(arena, bytes) };
 
         return error.UnsupportedTxnType;
+    }
+
+    pub fn decodeFromRLP(self: *Txn, arena: Allocator, serialized: []const u8) !usize {
+        if (serialized[0] > 0xC0) { // Is a RLP struct (i.e: LegacyTx)
+            var ltx: LegacyTxn = undefined;
+            const size = rlp.deserialize(LegacyTxn, arena, serialized, &ltx);
+            self.* = .{ .LegacyTxn = ltx };
+            return size;
+        }
+        var str: []const u8 = undefined;
+        const size = try rlp.deserialize([]const u8, arena, serialized, &str);
+        self.* = try Txn.decode(arena, str);
+
+        return size;
     }
 
     pub fn hash(self: Txn, allocator: Allocator) !Hash32 {
@@ -142,14 +156,14 @@ pub const LegacyTxn = struct {
 
     // decode decodes a transaction from bytes. No bytes from the input slice are referenced in the
     // output transaction.
-    pub fn decode(bytes: []const u8) !LegacyTxn {
-        return try RLPDecode(LegacyTxn, bytes);
+    pub fn decode(arena: Allocator, bytes: []const u8) !LegacyTxn {
+        return try common.decodeRLP(LegacyTxn, arena, bytes);
     }
 
     pub fn hash(self: LegacyTxn, allocator: Allocator) !Hash32 {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
-        return try RLPHash(LegacyTxn, allocator, self, null);
+        return try common.decodeRLPAndHash(LegacyTxn, allocator, self, null);
     }
 
     pub fn setSignature(self: *LegacyTxn, v: u256, r: u256, s: u256) void {
@@ -170,7 +184,7 @@ pub const LegacyTxn = struct {
 
 pub const AccessListTuple = struct {
     address: Address,
-    StorageKeys: []Hash32,
+    storage_keys: []Hash32,
 };
 
 pub const AccessListTxn = struct {
@@ -190,7 +204,7 @@ pub const AccessListTxn = struct {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
         const prefix = [_]u8{@intFromEnum(TxnTypes.AccessListTxn)};
-        return try RLPHash(AccessListTxn, allocator, self, &prefix);
+        return try common.decodeRLPAndHash(AccessListTxn, allocator, self, &prefix);
     }
 
     pub fn setSignature(self: *AccessListTxn, v: u256, r: u256, s: u256) void {
@@ -200,8 +214,8 @@ pub const AccessListTxn = struct {
     }
 
     // decode decodes a transaction from bytes.
-    pub fn decode(bytes: []const u8) !AccessListTxn {
-        return try RLPDecode(AccessListTxn, bytes);
+    pub fn decode(arena: Allocator, bytes: []const u8) !AccessListTxn {
+        return try common.decodeRLP(AccessListTxn, arena, bytes);
     }
 };
 
@@ -209,7 +223,7 @@ pub const FeeMarketTxn = struct {
     chain_id: u64,
     nonce: u64,
     max_priority_fee_per_gas: u64,
-    max_fee_per_gas: u64,
+    max_fee_per_gas: u256,
     gas: u64,
     to: ?Address,
     value: u256,
@@ -223,7 +237,7 @@ pub const FeeMarketTxn = struct {
         // TODO: consider caching the calculated txnHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
         const prefix = [_]u8{@intFromEnum(TxnTypes.FeeMarketTxn)};
-        return try RLPHash(FeeMarketTxn, allocator, self, &prefix);
+        return try common.decodeRLPAndHash(FeeMarketTxn, allocator, self, &prefix);
     }
 
     pub fn setSignature(self: *FeeMarketTxn, v: u256, r: u256, s: u256) void {
@@ -233,28 +247,14 @@ pub const FeeMarketTxn = struct {
     }
 
     // decode decodes a transaction from bytes.
-    pub fn decode(bytes: []const u8) !FeeMarketTxn {
-        return try RLPDecode(FeeMarketTxn, bytes);
+    pub fn decode(arena: Allocator, bytes: []const u8) !FeeMarketTxn {
+        return try common.decodeRLP(FeeMarketTxn, arena, bytes);
     }
 };
 
-pub fn RLPDecode(comptime T: type, bytes: []const u8) !T {
-    var ret: T = std.mem.zeroes(T);
-    _ = try rlp.deserialize(T, bytes, &ret);
-    return ret;
-}
-
-pub fn RLPHash(comptime T: type, allocator: Allocator, txn: T, prefix: ?[]const u8) !Hash32 {
-    var out = std.ArrayList(u8).init(allocator);
-    defer out.deinit();
-    try rlp.serialize(T, allocator, txn, &out);
-    if (prefix) |pre| {
-        return hasher.keccak256WithPrefix(pre, out.items);
-    }
-    return hasher.keccak256(out.items);
-}
-
 test "Mainnet transactions hashing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
     const testCase = struct {
         rlp_encoded: []const u8,
         expected_hash: []const u8,
@@ -287,7 +287,7 @@ test "Mainnet transactions hashing" {
         var txn_bytes: [testcase.rlp_encoded.len / 2]u8 = undefined;
         _ = try std.fmt.hexToBytes(&txn_bytes, testcase.rlp_encoded);
 
-        const txn = try Txn.decode(&txn_bytes);
+        const txn = try Txn.decode(arena.allocator(), &txn_bytes);
         const hash = try txn.hash(std.testing.allocator);
         try std.testing.expectEqualStrings(testcase.expected_hash, &std.fmt.bytesToHex(hash, std.fmt.Case.lower));
     }

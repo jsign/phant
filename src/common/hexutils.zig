@@ -1,6 +1,8 @@
 const std = @import("std");
 const fmt = std.fmt;
+const types = @import("../types/types.zig");
 const Allocator = std.mem.Allocator;
+const Address = types.Address;
 
 // This function turns an optionally '0x'-prefixed hex string
 // to a types.Hash32
@@ -42,4 +44,18 @@ pub fn prefixedhex2u64(src: []const u8) !u64 {
     var skip0x: usize = if (src[1] == 'X' or src[1] == 'x') 2 else 0;
 
     return std.fmt.parseInt(u64, src[skip0x..], 16);
+}
+
+// hexToAddress parses an optionally '0x'-prefixed hext string to an Address.
+pub fn hexToAddress(account_hex: []const u8) Address {
+    const account_hex_strip = if (std.mem.startsWith(u8, account_hex, "0x")) account_hex[2..] else account_hex[0..];
+    var address = std.mem.zeroes(Address);
+    _ = std.fmt.hexToBytes(&address, account_hex_strip) catch unreachable;
+    return address;
+}
+
+pub fn comptimeHexToBytes(comptime bytes: []const u8) [bytes.len / 2]u8 {
+    var result: [bytes.len / 2]u8 = undefined;
+    _ = try fmt.hexToBytes(result[0..], bytes);
+    return result;
 }
