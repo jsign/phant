@@ -215,20 +215,16 @@ pub const AccountStateHex = struct {
 
 const AccountStorageHex = std.json.ArrayHashMap(HexString);
 
-var test_allocator = std.testing.allocator;
 test "execution-spec-tests" {
-    var ft = try Fixture.fromBytes(test_allocator, @embedFile("fixtures/exec-spec-fixture.json"));
+    var allocator = std.testing.allocator;
+
+    var ft = try Fixture.fromBytes(allocator, @embedFile("fixtures/exec-spec-fixture.json"));
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
     var count: usize = 0;
     while (it.next()) |entry| {
-        try std.testing.expect(try entry.value_ptr.run(test_allocator));
+        try std.testing.expect(try entry.value_ptr.run(allocator));
         count += 1;
-
-        // TODO: Only run the first test for now. Then we can enable all and continue with the integration.
-        if (count == 1) {
-            break;
-        }
     }
 }
