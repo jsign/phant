@@ -22,7 +22,7 @@ const StateDB = @import("../state/state.zig").StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
-const TxnSigner = signer.TxnSigner;
+const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
@@ -32,7 +32,7 @@ pub const Blockchain = struct {
     state: *StateDB,
     prev_block: BlockHeader,
     last_256_blocks_hashes: [256]Hash32, // ordered in asc order
-    txn_signer: TxnSigner,
+    tx_signer: TxSigner,
 
     // init initializes a blockchain.
     // The caller **does not** transfer ownership of prev_block.
@@ -49,7 +49,7 @@ pub const Blockchain = struct {
             .state = state,
             .prev_block = try prev_block.clone(allocator),
             .last_256_blocks_hashes = last_256_blocks_hashes,
-            .txn_signer = try signer.TxnSigner.init(@intFromEnum(chain_id)),
+            .tx_signer = try signer.TxSigner.init(@intFromEnum(chain_id)),
         };
     }
 
@@ -63,7 +63,7 @@ pub const Blockchain = struct {
         const allocator = arena.allocator();
 
         // Execute block.
-        var result = try applyBody(allocator, self, self.state, block, self.txn_signer);
+        var result = try applyBody(allocator, self, self.state, block, self.tx_signer);
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used)
@@ -153,19 +153,19 @@ pub const Blockchain = struct {
         withdrawals_root: Hash32,
     };
 
-    fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, txn_signer: TxnSigner) !BlockExecutionResult {
+    fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, tx_signer: TxSigner) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
         for (block.transactions) |tx| {
-            const txn_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, txn_signer);
+            const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, tx_signer);
 
             const env: Environment = .{
-                .origin = txn_info.sender_address,
+                .origin = tx_info.sender_address,
                 .block_hashes = chain.last_256_blocks_hashes,
                 .coinbase = block.header.fee_recipient,
                 .number = block.header.block_number,
                 .gas_limit = block.header.gas_limit,
                 .base_fee_per_gas = block.header.base_fee_per_gas,
-                .gas_price = txn_info.effective_gas_price,
+                .gas_price = tx_info.effective_gas_price,
                 .time = block.header.timestamp,
                 .prev_randao = block.header.prev_randao,
                 .state = state,
@@ -195,14 +195,14 @@ pub const Blockchain = struct {
         };
     }
 
-    fn checkTransaction(allocator: Allocator, tx: transaction.Txn, base_fee_per_gas: u256, gas_available: u64, txn_signer: TxnSigner) !struct { sender_address: Address, effective_gas_price: u256 } {
+    fn checkTransaction(allocator: Allocator, tx: transaction.Tx, base_fee_per_gas: u256, gas_available: u64, tx_signer: TxSigner) !struct { sender_address: Address, effective_gas_price: u256 } {
         if (tx.getGasLimit() > gas_available)
             return error.InsufficientGas;
 
-        const sender_address = try txn_signer.get_sender(allocator, tx);
+        const sender_address = try tx_signer.get_sender(allocator, tx);
 
         const effective_gas_price = switch (tx) {
-            .FeeMarketTxn => |fm_tx| blk: {
+            .FeeMarketTx => |fm_tx| blk: {
                 if (fm_tx.max_fee_per_gas < fm_tx.max_priority_fee_per_gas)
                     return error.InvalidMaxFeePerGas;
                 if (fm_tx.max_fee_per_gas < base_fee_per_gas)
@@ -211,7 +211,7 @@ pub const Blockchain = struct {
                 const priority_fee_per_gas = @min(fm_tx.max_priority_fee_per_gas, fm_tx.max_fee_per_gas - base_fee_per_gas);
                 break :blk priority_fee_per_gas + base_fee_per_gas;
             },
-            .LegacyTxn, .AccessListTxn => blk: {
+            .LegacyTx, .AccessListTx => blk: {
                 if (tx.getGasPrice() < base_fee_per_gas)
                     return error.GasPriceLowerThanBaseFee;
                 break :blk tx.getGasPrice();
@@ -220,7 +220,7 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Txn) !struct { gas_used: u64 } {
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { gas_used: u64 } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
 
@@ -230,7 +230,7 @@ pub const Blockchain = struct {
 
         var sender_account = env.state.getAccount(sender);
         if (sender_account.nonce != tx.getNonce())
-            return error.InvalidTxnNonce;
+            return error.InvalidTxNonce;
         if (sender_account.balance < gas_fee + tx.getValue())
             return error.NotEnoughBalance;
         if (sender_account.code.len > 0)
@@ -245,7 +245,7 @@ pub const Blockchain = struct {
 
         try env.state.putAccessedAccount(env.coinbase);
         switch (tx) {
-            .LegacyTxn => {},
+            .LegacyTx => {},
             inline else => |al_tx| {
                 for (al_tx.access_list) |al| {
                     try env.state.putAccessedAccount(al.address);
@@ -300,7 +300,7 @@ pub const Blockchain = struct {
         return .{ .gas_used = total_gas_used };
     }
 
-    fn validateTransaction(tx: transaction.Txn) bool {
+    fn validateTransaction(tx: transaction.Tx) bool {
         if (calculateIntrinsicCost(tx) > tx.getGasLimit())
             return false;
         if (tx.getNonce() >= (2 << 64) - 1)
@@ -310,7 +310,7 @@ pub const Blockchain = struct {
         return true;
     }
 
-    fn calculateIntrinsicCost(tx: transaction.Txn) u64 {
+    fn calculateIntrinsicCost(tx: transaction.Tx) u64 {
         var data_cost: u64 = 0;
         const data = tx.getData();
         for (data) |byte| {
@@ -320,7 +320,7 @@ pub const Blockchain = struct {
         const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(data.len) else 0;
 
         const access_list_cost = switch (tx) {
-            .LegacyTxn => 0,
+            .LegacyTx => 0,
             inline else => |al_tx| blk: {
                 var sum: u64 = 0;
                 for (al_tx.access_list) |al| {

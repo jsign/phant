@@ -73,9 +73,9 @@ pub const VM = struct {
             .input_data = msg.data.ptr,
             .input_size = msg.data.len,
             .value = blk: {
-                var txn_value: [32]u8 = undefined;
-                std.mem.writeIntSliceBig(u256, &txn_value, msg.value);
-                break :blk .{ .bytes = txn_value };
+                var tx_value: [32]u8 = undefined;
+                std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
+                break :blk .{ .bytes = tx_value };
             },
             .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
             .code_address = toEVMCAddress(msg.code_address),

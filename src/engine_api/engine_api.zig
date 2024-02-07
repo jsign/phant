@@ -4,7 +4,7 @@ const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
 const Allocator = std.mem.Allocator;
 const Withdrawal = types.Withdrawal;
-const Txn = types.Txn;
+const Tx = types.Tx;
 const ExecutionPayload = execution_payload.ExecutionPayload;
 
 pub const execution_payload = @import("execution_payload.zig");
@@ -34,11 +34,11 @@ const AllPossibleExecutionParams = struct {
     transactions: [][]const u8,
 
     pub fn to_execution_payload(self: *const AllPossibleExecutionParams, allocator: Allocator) !ExecutionPayload {
-        var txns: []Txn = &[0]Txn{};
+        var txs: []Tx = &[0]Tx{};
         if (self.transactions.len > 0) {
-            txns = try allocator.alloc(Txn, self.transactions.len);
+            txs = try allocator.alloc(Tx, self.transactions.len);
             for (self.transactions, 0..) |tx, i| {
-                txns[i] = try Txn.decode(allocator, tx);
+                txs[i] = try Tx.decode(allocator, tx);
             }
         }
 
@@ -56,7 +56,7 @@ const AllPossibleExecutionParams = struct {
             .gasUsed = try common.prefixedhex2u64(self.gasUsed),
             .timestamp = try common.prefixedhex2u64(self.timestamp),
             .baseFeePerGas = try common.prefixedhex2u64(self.baseFeePerGas),
-            .transactions = txns,
+            .transactions = txs,
             .withdrawals = &[0]Withdrawal{},
             .blobGasUsed = null,
             .excessBlobGas = null,
