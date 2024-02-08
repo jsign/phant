@@ -218,7 +218,7 @@ const AccountStorageHex = std.json.ArrayHashMap(HexString);
 test "execution-spec-tests" {
     var allocator = std.testing.allocator;
 
-    var ft = try Fixture.fromBytes(allocator, @embedFile("fixtures/exec-spec-fixture.json"));
+    var ft = try Fixture.fromBytes(allocator, @embedFile("fixtures/shanghai/warm_coinbase_call_out_of_gas.json"));
     defer ft.deinit();
 
     var it = ft.tests.value.map.iterator();
