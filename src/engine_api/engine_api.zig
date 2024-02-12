@@ -86,18 +86,9 @@ test "deserialize sample engine_newPayloadV2" {
     const json = std.json;
     const expect = std.testing.expect;
 
-    const filePath = "src/engine_api/test_req.json";
+    const fileContent = @embedFile("./test_req.json");
 
-    const file = try std.fs.cwd().openFile(filePath, .{});
-    defer file.close();
-
-    const stat = try file.stat();
-
-    var buffer = try std.testing.allocator.alloc(u8, stat.size);
-    defer std.testing.allocator.free(buffer);
-    _ = try file.readAll(buffer);
-
-    const payload = try json.parseFromSlice(EngineAPIRequest, std.testing.allocator, buffer, .{ .ignore_unknown_fields = true });
+    const payload = try json.parseFromSlice(EngineAPIRequest, std.testing.allocator, fileContent, .{ .ignore_unknown_fields = true });
     defer payload.deinit();
 
     try expect(std.mem.eql(u8, payload.value.method, "engine_newPayloadV2"));
