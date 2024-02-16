@@ -14,5 +14,9 @@
             .url = "https://github.com/karlseguin/http.zig/archive/1a82beb0dfc22e6fc38e9918e323f8fbd3cb78a3.tar.gz",
             .hash = "122020cbd399273b1220f11c4b2d734b86c94cc5f1c2d6d90fc766580bc0e25b0dfb",
         },
+        .@"zig-cli" = .{
+            .url = "https://github.com/sam701/zig-cli/archive/ddf49596a9225c91e6cd9c28904aec598d5becf0.tar.gz",
+			.hash = "1220787d26a153a3755d55c8b65af53f7b1c4d79add4a47e2898dc776f3a16f1ce89",
+        },
     },
 }

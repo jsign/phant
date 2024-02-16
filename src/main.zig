@@ -13,6 +13,7 @@ const TxSigner = @import("signer/signer.zig").TxSigner;
 const httpz = @import("httpz");
 const engine_api = @import("engine_api/engine_api.zig");
 const json = std.json;
+const cli = @import("zig-cli");
 
 fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
     if (try req.json(engine_api.EngineAPIRequest)) |payload| {
@@ -26,17 +27,46 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
     }
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
 
-    std.log.info("Welcome to phant! 🐘", .{});
+var configuration = config.Config{};
 
-    var engine_api_server = try httpz.Server().init(allocator, .{
-        .port = 8551,
+var engine_port = cli.Option{
+    .long_name= "engine-port",
+    .help = "port of the execution engine",
+    .value_ref = cli.mkRef(&configuration.engine_port),
+};
+
+var network_id_opt = cli.Option{
+    .long_name= "network-id",
+    .help = "network id",
+    .value_ref = cli.mkRef(&configuration.network_id),
+};
+
+var app = &cli.App{
+    .command = cli.Command{
+        .name = "run",
+        .options = &.{ &network_id_opt, &engine_port },
+        .target = cli.CommandTarget{
+            .action = cli.CommandAction{ .exec = run_server },
+        },
+    },
+};
+
+
+fn run_server() !void {
+var engine_api_server = try httpz.Server().init(allocator, .{
+        .port = configuration.engine_port,
     });
     var router = engine_api_server.router();
     router.post("/", engineAPIHandler);
-    std.log.info("Listening on 8551", .{});
+    std.log.info("Listening on port {}", .{configuration.engine_port});
     try engine_api_server.listen();
+}
+
+pub fn main() !void {
+    std.log.info("Welcome to phant! 🐘", .{});
+
+    return cli.run(app, allocator);
 }

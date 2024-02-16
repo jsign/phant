@@ -24,6 +24,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const mod_httpz = httpz.module("httpz");
+    const zigcli_dep = b.dependency("zig-cli", .{ .target = target });
+    const zigcli_mod = zigcli_dep.module("zig-cli");
 
     const ethash = b.addStaticLibrary(.{
         .name = "ethash",
@@ -106,6 +108,7 @@ pub fn build(b: *std.Build) void {
     exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
     exe.addModule("zig-eth-secp256k1", mod_secp256k1);
     exe.addModule("httpz", mod_httpz);
+    exe.addModule("zig-cli", zigcli_mod);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
