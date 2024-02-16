@@ -22,6 +22,8 @@ const StateDB = @import("../state/state.zig").StateDB;
 const Hash32 = types.Hash32;
 const Bytes32 = types.Bytes32;
 const Address = types.Address;
+const Receipt = types.Receipt;
+const Log = types.Log;
 const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
@@ -176,7 +178,11 @@ pub const Blockchain = struct {
             const exec_tx_result = try processTransaction(allocator, env, tx);
             gas_available -= exec_tx_result.gas_used;
 
-            // TODO: make receipt and add to receipt tree.
+            // Create receipt.
+            const cumm_gas_used = block.header.gas_limit - gas_available;
+            const receipt = Receipt.init(tx, exec_tx_result.success, cumm_gas_used, &[_]Log{});
+            _ = receipt;
+
             // TODO: do tx logs aggregation.
         }
 
@@ -220,7 +226,7 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { gas_used: u64 } {
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64 } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
 
@@ -297,7 +303,7 @@ pub const Blockchain = struct {
                 env.state.destroyAccount(address);
         }
 
-        return .{ .gas_used = total_gas_used };
+        return .{ .success = output.success, .gas_used = total_gas_used };
     }
 
     fn validateTransaction(tx: transaction.Tx) bool {
@@ -397,25 +403,10 @@ pub const Blockchain = struct {
         return padded_address;
     }
 
-    const MessageCallOutput = struct {
-        gas_left: u64,
-        refund_counter: u64,
-        // logs: Union[Tuple[()], Tuple[Log, ...]] TODO
-        // accounts_to_delete: AddressKeySet, // TODO (delete?)
-        // error TODO (required for future receipts)
-    };
-
-    fn processMessageCall(message: Message, env: Environment) !MessageCallOutput {
+    fn processMessageCall(message: Message, env: Environment) !vm.MessageCallOutput {
         var vm_instance = VM.init(env);
         defer vm_instance.deinit();
 
-        const result = try vm_instance.processMessageCall(message);
-        defer {
-            if (result.release) |release| release(&result);
-        }
-        return .{
-            .gas_left = @intCast(result.gas_left),
-            .refund_counter = @intCast(result.gas_refund),
-        };
+        return try vm_instance.processMessageCall(message);
     }
 };
