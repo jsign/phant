@@ -2,7 +2,9 @@ const std = @import("std");
 const types = @import("types/types.zig");
 const crypto = @import("crypto/crypto.zig");
 const ecdsa = crypto.ecdsa;
-const config = @import("config/config.zig");
+const cfg = @import("config/config.zig");
+const Config = cfg.Config;
+const applyChainSpec = cfg.applyChainSpec;
 const AccountState = @import("state/state.zig").AccountState;
 const Address = types.Address;
 const VM = @import("blockchain/vm.zig").VM;
@@ -49,6 +51,9 @@ pub fn main() !void {
     const port: u16 = if (opts.args.engine_api_port == null) 8551 else opts.args.engine_api_port.?;
 
     std.log.info("Welcome to phant! 🐘", .{});
+
+    var config = Config{};
+    try applyChainSpec(allocator, &config);
 
     var engine_api_server = try httpz.Server().init(allocator, .{
         .port = port,
