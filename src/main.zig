@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("types/types.zig");
 const crypto = @import("crypto/crypto.zig");
 const ecdsa = crypto.ecdsa;
-const config = @import("config/config.zig");
+const Config = @import("config/config.zig").Config;
 const AccountState = @import("state/state.zig").AccountState;
 const Address = types.Address;
 const VM = @import("blockchain/vm.zig").VM;
@@ -30,18 +30,18 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var allocator = gpa.allocator();
 
-var configuration = config.Config{};
+var config = Config{};
 
 var engine_port = cli.Option{
     .long_name = "engine-port",
     .help = "port of the execution engine",
-    .value_ref = cli.mkRef(&configuration.engine_port),
+    .value_ref = cli.mkRef(&config.engine_port),
 };
 
 var network_id_opt = cli.Option{
     .long_name = "network-id",
     .help = "network id",
-    .value_ref = cli.mkRef(&configuration.network_id),
+    .value_ref = cli.mkRef(&config.network_id),
 };
 
 var app = &cli.App{
@@ -56,11 +56,11 @@ var app = &cli.App{
 
 fn run_server() !void {
     var engine_api_server = try httpz.Server().init(allocator, .{
-        .port = configuration.engine_port,
+        .port = config.engine_port,
     });
     var router = engine_api_server.router();
     router.post("/", engineAPIHandler);
-    std.log.info("Listening on port {}", .{configuration.engine_port});
+    std.log.info("Listening on port {}", .{config.engine_port});
     try engine_api_server.listen();
 }
 
