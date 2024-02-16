@@ -28,18 +28,18 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
 }
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+var allocator = gpa.allocator();
 
 var configuration = config.Config{};
 
 var engine_port = cli.Option{
-    .long_name= "engine-port",
+    .long_name = "engine-port",
     .help = "port of the execution engine",
     .value_ref = cli.mkRef(&configuration.engine_port),
 };
 
 var network_id_opt = cli.Option{
-    .long_name= "network-id",
+    .long_name = "network-id",
     .help = "network id",
     .value_ref = cli.mkRef(&configuration.network_id),
 };
@@ -54,9 +54,8 @@ var app = &cli.App{
     },
 };
 
-
 fn run_server() !void {
-var engine_api_server = try httpz.Server().init(allocator, .{
+    var engine_api_server = try httpz.Server().init(allocator, .{
         .port = configuration.engine_port,
     });
     var router = engine_api_server.router();
