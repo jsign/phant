@@ -6,6 +6,9 @@ pub const Bytes31 = [31]u8;
 // Ethereum execution layer types.
 pub const Address = [20]u8;
 
+// Bloom
+pub const LogsBloom = [256]u8;
+
 // Blocks
 const block = @import("block.zig");
 pub const empty_uncle_hash = block.empty_uncle_hash;
