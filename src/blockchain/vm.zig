@@ -411,7 +411,6 @@ const EVMOneHost = struct {
             evmc.EVMC_CREATE, evmc.EVMC_CREATE2 => msg.*.input_data[0..msg.*.input_size],
             else => @panic("unkown message kind"),
         };
-        std.log.warn("COOOODE {}", .{std.fmt.fmtSliceHexLower(code)});
 
         var result = vm.evm.*.execute.?(
             vm.evm,

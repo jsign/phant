@@ -19,10 +19,10 @@ test "create contract" {
 
     const coinbase = common.hexToAddress("0x1000000000000000000000000000000000000001");
     var coinbase_state = try state.AccountState.init(allocator, coinbase, 1, 0, &[_]u8{});
-
     var sdb = try StateDB.init(allocator, &[_]state.AccountState{coinbase_state});
     defer sdb.deinit();
 
+    // Configure an EVM execution enviroment for a block from this coinbase.
     const env: Environment = .{
         .block_hashes = [_]Hash32{std.mem.zeroes(Hash32)} ** 256,
         .origin = coinbase,
@@ -40,9 +40,8 @@ test "create contract" {
     var vmi = vm.VM.init(env);
     defer vmi.deinit();
 
-    var contract_addr: Address = undefined;
     // Create contract.
-    {
+    var contract_addr: Address = blk: {
         const msg = try blockchain.Blockchain.prepareMessage(
             allocator,
             coinbase,
@@ -70,10 +69,13 @@ test "create contract" {
         );
 
         try sdb.startTx();
-        _ = try vmi.processMessageCall(msg);
+        var out = try vmi.processMessageCall(msg);
 
-        contract_addr = msg.current_target;
-    }
+        // Check the contract creation execution was successful.
+        try std.testing.expect(out.success);
+
+        break :blk msg.current_target;
+    };
 
     // Run it.
     {
@@ -88,6 +90,9 @@ test "create contract" {
         );
 
         try sdb.startTx();
-        _ = try vmi.processMessageCall(msg);
+        var out = try vmi.processMessageCall(msg);
+
+        // Check that the execution didn't fail, thus the contract was found and executed correctly.
+        try std.testing.expect(out.success);
     }
 }
