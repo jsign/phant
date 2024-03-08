@@ -279,12 +279,21 @@ test "basic" {
             .exp_hash = comptime common.comptimeHexToBytes("6764f7ad0efcbc11b84fe7567773aa4b12bd6b4d35c05bbc3951b58dedb6c8e8"),
         },
         .{
-            .name = "two keys - root is a branch node with two leaf nodes",
+            .name = "two keys - root is a branch node with two (embedded) leaf nodes",
             .keyvals = &[_]KeyVal{
                 try KeyVal.init(allocator, &[_]u8{ 1, 2, 3, 4 }, "hello1"),
                 try KeyVal.init(allocator, &[_]u8{ 255, 2, 3, 4 }, "hello2"),
             },
             .exp_hash = comptime common.comptimeHexToBytes("5c474c00e417f587322ae674c948f04e2c217f95bd1dac806af14fa46f8fa403"),
+        },
+        .{
+            .name = "two keys - root is a branch node with two (embedded) leaf nodes and one hashed node",
+            .keyvals = &[_]KeyVal{
+                try KeyVal.init(allocator, &[_]u8{ 1 << 4, 2, 3, 4 }, "hello1"),
+                try KeyVal.init(allocator, &[_]u8{ 2 << 4, 2, 3, 4 }, "hello2"),
+                try KeyVal.init(allocator, &[_]u8{ 3 << 4, 2, 3, 4 }, "hello333333333333333333333333333"), // RLP encoding len >= 32
+            },
+            .exp_hash = comptime common.comptimeHexToBytes("86d4d51eedae1cd8ffdfeef48e5f1cd021d84c8d3df0088dfad39e72b37fc4b1"),
         },
     };
 
