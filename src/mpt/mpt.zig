@@ -46,9 +46,6 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
         return .{ .empty_node = .{} };
     }
 
-    var out = std.ArrayList(u8).init(allocator);
-    defer out.deinit();
-
     // Leaf node.
     if (list.len == 1) {
         return .{ .leaf_node = .{ .extra_nibbles = list[0].nibbles[level..], .value = list[0].value } };
@@ -75,7 +72,6 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
         const node = try insertNode(allocator, nibble_group, level + 1);
         const node_rlp = try node.encodeRLP(allocator);
         bn.slot[list[start].nibbles[level]] = if (node_rlp.len < 32) try node.getBranchValue(allocator) else .{ .value = try node.hash(allocator) };
-        // std.log.warn("nibble_group({}) = {}", .{ nibble_group[0].nibbles[level], std.fmt.fmtSliceHexLower(bn.slot[list[start].nibbles[level]]) });
 
         start = end;
     }
@@ -88,7 +84,7 @@ const Node = union(enum) {
     branch_node: BranchNode,
     leaf_node: LeafNode,
 
-    pub fn getBranchValue(self: Node, allocator: Allocator) !BranchValue {
+    pub fn getBranchValue(self: Node, allocator: Allocator) !GenericRLPValue {
         return switch (self) {
             inline else => |n| n.getBranchValue(allocator),
         };
@@ -109,7 +105,7 @@ const Node = union(enum) {
 };
 
 const EmptyNode = struct {
-    pub fn getBranchValue(self: EmptyNode, allocator: Allocator) BranchValue {
+    pub fn getBranchValue(self: EmptyNode, allocator: Allocator) GenericRLPValue {
         _ = allocator;
         _ = self;
         return .{ .value = &[_]u8{} };
@@ -127,24 +123,30 @@ const EmptyNode = struct {
     }
 };
 
-const BranchValue = union(enum) {
+const GenericRLPValue = union(enum) {
     value: []const u8,
-    list: []BranchValue,
+    list: []const GenericRLPValue,
+
+    pub fn encodeToRLP(self: GenericRLPValue, allocator: Allocator, list: *std.ArrayList(u8)) !void {
+        switch (self) {
+            inline else => |v| try rlp.serialize(@TypeOf(v), allocator, v, list),
+        }
+    }
 };
 
 const BranchNode = struct {
-    slot: [16]BranchValue,
+    slot: [16]GenericRLPValue,
     value: []const u8,
 
     pub fn init() BranchNode {
         return .{
-            .slot = [_]BranchValue{.{ .value = &[_]u8{} }} ** 16,
+            .slot = [_]GenericRLPValue{.{ .value = &[_]u8{} }} ** 16,
             .value = &[_]u8{},
         };
     }
 
-    pub fn getBranchValue(self: BranchNode, allocator: Allocator) !BranchValue {
-        var rlp_value = try allocator.alloc(BranchValue, 17);
+    pub fn getBranchValue(self: BranchNode, allocator: Allocator) !GenericRLPValue {
+        var rlp_value = try allocator.alloc(GenericRLPValue, 17);
         for (self.slot, 0..) |slot, i| {
             rlp_value[i] = slot;
         }
@@ -166,7 +168,6 @@ const BranchNode = struct {
 
         var hsh = try allocator.create(Hash32);
         @memcpy(hsh, &hasher.keccak256(rlp_encoded));
-        std.log.warn("branch_node (2) rlp={}", .{std.fmt.fmtSliceHexLower(hsh)});
         return hsh;
     }
 };
@@ -175,7 +176,7 @@ const LeafNode = struct {
     extra_nibbles: []const u8,
     value: []const u8,
 
-    pub fn getBranchValue(self: LeafNode, allocator: Allocator) !BranchValue {
+    pub fn getBranchValue(self: LeafNode, allocator: Allocator) !GenericRLPValue {
         // Calculate rlp_nibbles which adds the prefix nibble to the key nibbles.
         const required_extra_prefix_nibble = self.extra_nibbles.len % 2 == 0;
 
@@ -183,7 +184,6 @@ const LeafNode = struct {
         total_nibbles += if (required_extra_prefix_nibble) 2 else 1;
 
         var rlp_nibbles = try allocator.alloc(u8, total_nibbles / 2);
-        defer allocator.free(rlp_nibbles);
         @memset(rlp_nibbles, 0);
 
         var curr_byte: usize = undefined;
@@ -206,16 +206,19 @@ const LeafNode = struct {
         }
 
         // Calculate the RLP representation of the value.
-        var out = try allocator.alloc(BranchValue, 2);
+        var out = try allocator.alloc(GenericRLPValue, 2);
         out[0] = .{ .value = rlp_nibbles };
         out[1] = .{ .value = self.value };
+
         return .{ .list = out };
     }
 
     pub fn encodeRLP(self: LeafNode, allocator: Allocator) ![]const u8 {
         const bv = try self.getBranchValue(allocator);
         var out = std.ArrayList(u8).init(allocator);
-        try rlp.serialize(BranchValue, allocator, bv, &out);
+        defer out.deinit();
+
+        try rlp.serialize(GenericRLPValue, allocator, bv, &out);
 
         return out.toOwnedSlice();
     }
@@ -225,6 +228,7 @@ const LeafNode = struct {
 
         var hsh = try allocator.create(Hash32);
         @memcpy(hsh, &hasher.keccak256(rlp_value));
+
         return hsh;
     }
 };
