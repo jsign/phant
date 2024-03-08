@@ -7,7 +7,7 @@ const common = @import("../common/common.zig");
 const Allocator = std.mem.Allocator;
 const Hash32 = types.Hash32;
 
-pub const empty_mpt_root = common.comptimeHexToBytes("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
+const empty_mpt_root = common.comptimeHexToBytes("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
 
 const KeyVal = struct {
     nibbles: []const u8,
@@ -26,7 +26,7 @@ const KeyVal = struct {
     }
 };
 
-fn mptize(allocator: Allocator, list: []const KeyVal) !Hash32 {
+fn mptize(arena: Allocator, list: []const KeyVal) !Hash32 {
     const s = struct {
         fn lessThan(_: void, a: KeyVal, b: KeyVal) bool {
             return std.mem.lessThan(u8, a.nibbles, b.nibbles);
@@ -34,13 +34,16 @@ fn mptize(allocator: Allocator, list: []const KeyVal) !Hash32 {
     };
     std.debug.assert(std.sort.isSorted(KeyVal, list, {}, s.lessThan));
 
-    return try getMPTRoot(allocator, list, 0);
+    const root = try insertNode(arena, list, 0);
+    const root_hash = try root.hash(arena);
+
+    return root_hash.*;
 }
 
-fn getMPTRoot(allocator: Allocator, list: []const KeyVal, level: usize) !Hash32 {
+fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
     // Empty node.
     if (list.len == 0) {
-        return empty_mpt_root;
+        return .{ .empty_node = .{} };
     }
 
     var out = std.ArrayList(u8).init(allocator);
@@ -48,23 +51,136 @@ fn getMPTRoot(allocator: Allocator, list: []const KeyVal, level: usize) !Hash32 
 
     // Leaf node.
     if (list.len == 1) {
-        const ln: LeafNode = .{ .extra_nibbles = list[0].nibbles[level..], .value = list[0].value };
-        return ln.hash(allocator);
-    } else @panic("not implemented");
+        return .{ .leaf_node = .{ .extra_nibbles = list[0].nibbles[level..], .value = list[0].value } };
+    }
 
-    return hasher.keccak256(out.items);
+    var bn = BranchNode.init();
+    var start = level;
+    while (start < list.len) {
+        var end = start;
+        for (start..list.len) |i| {
+            if (list[start].nibbles[level] != list[i].nibbles[level]) {
+                end = i;
+                break;
+            }
+            end += 1;
+        }
+
+        // Extension node.
+        if (start == 0 and end == list.len) {
+            @panic("TODO");
+        }
+
+        const nibble_group = list[start..end];
+        const node = try insertNode(allocator, nibble_group, level + 1);
+        const node_rlp = try node.encodeRLP(allocator);
+        bn.slot[list[start].nibbles[level]] = if (node_rlp.len < 32) try node.getBranchValue(allocator) else .{ .value = try node.hash(allocator) };
+        // std.log.warn("nibble_group({}) = {}", .{ nibble_group[0].nibbles[level], std.fmt.fmtSliceHexLower(bn.slot[list[start].nibbles[level]]) });
+
+        start = end;
+    }
+
+    return .{ .branch_node = bn };
 }
+
+const Node = union(enum) {
+    empty_node: EmptyNode,
+    branch_node: BranchNode,
+    leaf_node: LeafNode,
+
+    pub fn getBranchValue(self: Node, allocator: Allocator) !BranchValue {
+        return switch (self) {
+            inline else => |n| n.getBranchValue(allocator),
+        };
+    }
+
+    pub fn encodeRLP(self: Node, allocator: Allocator) ![]const u8 {
+        return switch (self) {
+            inline else => |n| n.encodeRLP(allocator),
+        };
+    }
+
+    // hash returns a heap-allocated Hash32.
+    pub fn hash(self: Node, allocator: Allocator) !*const Hash32 {
+        return switch (self) {
+            inline else => |n| n.hash(allocator),
+        };
+    }
+};
+
+const EmptyNode = struct {
+    pub fn getBranchValue(self: EmptyNode, allocator: Allocator) BranchValue {
+        _ = allocator;
+        _ = self;
+        return .{ .value = &[_]u8{} };
+    }
+
+    pub fn encodeRLP(self: EmptyNode, allocator: Allocator) ![]const u8 {
+        _ = allocator;
+        _ = self;
+        return &[_]u8{};
+    }
+    pub fn hash(self: EmptyNode, allocator: Allocator) !*const Hash32 {
+        _ = allocator;
+        _ = self;
+        return &empty_mpt_root;
+    }
+};
+
+const BranchValue = union(enum) {
+    value: []const u8,
+    list: []BranchValue,
+};
+
+const BranchNode = struct {
+    slot: [16]BranchValue,
+    value: []const u8,
+
+    pub fn init() BranchNode {
+        return .{
+            .slot = [_]BranchValue{.{ .value = &[_]u8{} }} ** 16,
+            .value = &[_]u8{},
+        };
+    }
+
+    pub fn getBranchValue(self: BranchNode, allocator: Allocator) !BranchValue {
+        var rlp_value = try allocator.alloc(BranchValue, 17);
+        for (self.slot, 0..) |slot, i| {
+            rlp_value[i] = slot;
+        }
+        rlp_value[16] = .{ .value = self.value };
+
+        return .{ .list = rlp_value };
+    }
+
+    pub fn encodeRLP(self: BranchNode, allocator: Allocator) ![]const u8 {
+        const rlp_value = try self.getBranchValue(allocator);
+        var out = std.ArrayList(u8).init(allocator);
+        try rlp.serialize(@TypeOf(rlp_value), allocator, rlp_value, &out);
+
+        return out.toOwnedSlice();
+    }
+
+    pub fn hash(self: BranchNode, allocator: Allocator) !*Hash32 {
+        var rlp_encoded = try self.encodeRLP(allocator);
+
+        var hsh = try allocator.create(Hash32);
+        @memcpy(hsh, &hasher.keccak256(rlp_encoded));
+        std.log.warn("branch_node (2) rlp={}", .{std.fmt.fmtSliceHexLower(hsh)});
+        return hsh;
+    }
+};
 
 const LeafNode = struct {
     extra_nibbles: []const u8,
     value: []const u8,
 
-    pub fn hash(self: LeafNode, allocator: Allocator) !Hash32 {
+    pub fn getBranchValue(self: LeafNode, allocator: Allocator) !BranchValue {
         // Calculate rlp_nibbles which adds the prefix nibble to the key nibbles.
         const required_extra_prefix_nibble = self.extra_nibbles.len % 2 == 0;
 
         var total_nibbles = self.extra_nibbles.len;
-        total_nibbles += if (required_extra_prefix_nibble) 2 else 0;
+        total_nibbles += if (required_extra_prefix_nibble) 2 else 1;
 
         var rlp_nibbles = try allocator.alloc(u8, total_nibbles / 2);
         defer allocator.free(rlp_nibbles);
@@ -90,12 +206,26 @@ const LeafNode = struct {
         }
 
         // Calculate the RLP representation of the value.
-        const RLPType = struct { prefixed_nibbles: []const u8, value: []const u8 };
-        var rlp_repr: RLPType = .{ .prefixed_nibbles = rlp_nibbles, .value = self.value };
-        var out = std.ArrayList(u8).init(allocator);
-        try rlp.serialize(RLPType, allocator, rlp_repr, &out);
+        var out = try allocator.alloc(BranchValue, 2);
+        out[0] = .{ .value = rlp_nibbles };
+        out[1] = .{ .value = self.value };
+        return .{ .list = out };
+    }
 
-        return hasher.keccak256(out.items);
+    pub fn encodeRLP(self: LeafNode, allocator: Allocator) ![]const u8 {
+        const bv = try self.getBranchValue(allocator);
+        var out = std.ArrayList(u8).init(allocator);
+        try rlp.serialize(BranchValue, allocator, bv, &out);
+
+        return out.toOwnedSlice();
+    }
+
+    pub fn hash(self: LeafNode, allocator: Allocator) !*Hash32 {
+        var rlp_value = try self.encodeRLP(allocator);
+
+        var hsh = try allocator.create(Hash32);
+        @memcpy(hsh, &hasher.keccak256(rlp_value));
+        return hsh;
     }
 };
 
@@ -140,9 +270,17 @@ test "basic" {
             .exp_hash = empty_mpt_root,
         },
         .{
-            .name = "single",
+            .name = "single key - root is a leaf node",
             .keyvals = &[_]KeyVal{try KeyVal.init(allocator, &[_]u8{ 1, 2, 3, 4 }, "hello")},
             .exp_hash = comptime common.comptimeHexToBytes("6764f7ad0efcbc11b84fe7567773aa4b12bd6b4d35c05bbc3951b58dedb6c8e8"),
+        },
+        .{
+            .name = "two keys - root is a branch node with two leaf nodes",
+            .keyvals = &[_]KeyVal{
+                try KeyVal.init(allocator, &[_]u8{ 1, 2, 3, 4 }, "hello1"),
+                try KeyVal.init(allocator, &[_]u8{ 255, 2, 3, 4 }, "hello2"),
+            },
+            .exp_hash = comptime common.comptimeHexToBytes("5c474c00e417f587322ae674c948f04e2c217f95bd1dac806af14fa46f8fa403"),
         },
     };
 
