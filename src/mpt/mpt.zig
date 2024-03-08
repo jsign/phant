@@ -14,8 +14,10 @@ pub const KeyVal = struct {
     nibbles: []const u8,
     value: []const u8,
 
-    pub fn init(allocator: Allocator, key: []const u8, value: []const u8) !KeyVal {
-        var nibbles = try allocator.alloc(u8, key.len * 2);
+    // init initializes a new KeyVal. The allocator must be an arena allocator, thus the client is responsible
+    // for freeing the arena after it's use in further `mptize(...)` calls.
+    pub fn init(arena: Allocator, key: []const u8, value: []const u8) !KeyVal {
+        var nibbles = try arena.alloc(u8, key.len * 2);
         for (key, 0..) |byte, i| {
             const high = byte >> 4;
             const low = byte & 0x0F;
