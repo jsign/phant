@@ -80,7 +80,7 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
             var next = try insertNode(allocator, list, prefix_index);
             const node_rlp = try next.encodeRLP(allocator);
             var rlp_value: GenericRLPValue = if (node_rlp.len < 32) try next.getRLPValue(allocator) else .{ .value = try next.hash(allocator) };
-            return .{ .extension_node = ExtensionNode.init(head.nibbles[0..prefix_index], rlp_value) };
+            return .{ .extension_node = ExtensionNode.init(head.nibbles[level..prefix_index], rlp_value) };
         }
 
         // TODO: avoid repetition
@@ -360,6 +360,16 @@ test "basic" {
                 try KeyVal.init(allocator, &[_]u8{ 0, 0xf2, 3, 4 }, "hello2"),
             },
             .exp_hash = comptime common.comptimeHexToBytes("312b81f16960a816e84679c5b9de49471b07b5c11ef0eff19779b083e418f83b"),
+        },
+        .{
+            .name = "complex - tree with 5 levels, 3 branch nodes, 2 extension nodes, 4 leaf node",
+            .keyvals = &[_]KeyVal{
+                try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x81 }, "hello1"), // BN -> EN(34) -> BN -> EN(578) -> LN(1)
+                try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x83 }, "hello2"), // BN -> EN(34) -> BN -> EN(578) -> LN(3)
+                try KeyVal.init(allocator, &[_]u8{ 0x34, 0x5F, 2, 3 }, "hello3"), // BN -> EN(34) -> BN -> LN(5F0203)
+                try KeyVal.init(allocator, &[_]u8{ 0xFF, 1, 2, 3 }, "hello4"), // BN -> LN(FF010203)
+            },
+            .exp_hash = comptime common.comptimeHexToBytes("c66c75a03f2b52dfc32b5e229bb2ff7e1d53dcb2b54fe83a1b39418788e0fc66"),
         },
     };
 
