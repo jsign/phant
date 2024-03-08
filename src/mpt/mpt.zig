@@ -314,29 +314,6 @@ fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, nibbles: []c
     return rlp_nibbles;
 }
 
-// indexToRLP returns the RLP representation of the index.
-fn indexToRLP(arena: Allocator, index: u16) ![]const u8 {
-    if (index == 0) {
-        return &[_]u8{0x80};
-    }
-    if (index <= 127) { // Small values RLP optimized.
-        var out = try arena.alloc(u8, 1);
-        out[0] = @intCast(index);
-        return out;
-    }
-    if (index < 1 << 8) { // 1 byte.
-        var out = try arena.alloc(u8, 1 + 1);
-        out[0] = 0x81;
-        out[1] = @intCast(index);
-        return out;
-    }
-    // 2 bytes.
-    var out = try arena.alloc(u8, 1 + 2);
-    out[0] = 0x82;
-    std.mem.writeInt(u16, out[1..3], index, std.builtin.Endian.Big);
-    return out;
-}
-
 test "correctness" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
