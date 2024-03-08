@@ -9,7 +9,8 @@ const Hash32 = types.Hash32;
 
 const empty_mpt_root = common.comptimeHexToBytes("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421");
 
-const KeyVal = struct {
+// KeyVal represents an element in the Merkle Patricia Trie.
+pub const KeyVal = struct {
     nibbles: []const u8,
     value: []const u8,
 
@@ -26,7 +27,9 @@ const KeyVal = struct {
     }
 };
 
-fn mptize(arena: Allocator, list: []const KeyVal) !Hash32 {
+// mptize returns the root hash of a Merkle Patricia Trie that contains all provided `list` elements.
+// The elements in `list` *must* be sorted by key. The caller must pass an arena allocator to `allocator`.
+pub fn mptize(arena: Allocator, list: []const KeyVal) !Hash32 {
     const s = struct {
         fn lessThan(_: void, a: KeyVal, b: KeyVal) bool {
             return std.mem.lessThan(u8, a.nibbles, b.nibbles);
@@ -51,9 +54,12 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
         return .{ .leaf_node = .{ .extra_nibbles = list[0].nibbles[level..], .value = list[0].value } };
     }
 
+    // A priori we'll fill a BranchNode. If we detect all elements in list have a common prefix, we'll insert an
+    // Extension node.
     var bn = BranchNode.init();
     var start: usize = 0;
     while (start < list.len) {
+        // Detect the next slice of list that share the same first nibble.
         var end = start;
         for (start..list.len) |i| {
             if (list[start].nibbles[level] != list[i].nibbles[level]) {
@@ -63,10 +69,12 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
             end += 1;
         }
 
-        // Extension node.
+        // If the start and end of the slice is the complete list, then all elements share a common prefix of at least
+        // one nibble. This means we need to insert an ExtensionNode.
         if (start == 0 and end == list.len) {
             var head = list[0];
             var tail = list[1..];
+            // Detect the longest common prefix of all elements in list.
             var prefix_index: usize = level + 1;
             Loop: while (true) {
                 for (tail) |t| {
@@ -76,6 +84,7 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
                 }
                 prefix_index += 1;
             }
+            // The common prefix for elements in list will be, for each, in nibbles[level..prefix_index]
 
             var next = try insertNode(allocator, list, prefix_index);
             const node_rlp = try next.encodeRLP(allocator);
@@ -83,13 +92,14 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
             return .{ .extension_node = ExtensionNode.init(head.nibbles[level..prefix_index], rlp_value) };
         }
 
-        // TODO: avoid repetition
+        // We have a slice of list that share the first nibble, so we need to insert it in the current BranchNode.
         const nibble_group = list[start..end];
         const node = try insertNode(allocator, nibble_group, level + 1);
         const node_rlp = try node.encodeRLP(allocator);
         bn.slot[list[start].nibbles[level]] = if (node_rlp.len < 32) try node.getRLPValue(allocator) else .{ .value = try node.hash(allocator) };
 
         start = end;
+        // We loop again looking for the next slice of list that share the first nibble.
     }
 
     return .{ .branch_node = bn };
@@ -124,7 +134,6 @@ const Node = union(enum) {
         };
     }
 
-    // hash returns a heap-allocated Hash32.
     pub fn hash(self: Node, allocator: Allocator) !*const Hash32 {
         return switch (self) {
             inline else => |n| n.hash(allocator),
@@ -258,11 +267,12 @@ const LeafNode = struct {
     }
 };
 
-fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, extra_nibbles: []const u8) ![]const u8 {
-    // Calculate rlp_nibbles which adds the prefix nibble to the key nibbles.
-    const required_extra_prefix_nibble = extra_nibbles.len % 2 == 0;
+// encodeNibbles encodes the provided nibbles with the prefix nibble depending on the node type.
+// i.e: Extension and Leaf nodes have different prefixes.
+fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, nibbles: []const u8) ![]const u8 {
+    const required_extra_prefix_nibble = nibbles.len % 2 == 0;
 
-    var total_nibbles = extra_nibbles.len;
+    var total_nibbles = nibbles.len;
     total_nibbles += if (required_extra_prefix_nibble) 2 else 1;
 
     var rlp_nibbles = try allocator.alloc(u8, total_nibbles / 2);
@@ -280,7 +290,7 @@ fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, extra_nibble
         curr_shift = 0;
     }
 
-    for (extra_nibbles) |nibble| {
+    for (nibbles) |nibble| {
         rlp_nibbles[curr_byte] |= nibble << curr_shift;
         if (curr_shift == 0)
             curr_byte += 1;
@@ -291,30 +301,29 @@ fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, extra_nibble
 }
 
 // indexToRLP returns the RLP representation of the index.
-// The caller is responsible for freeing the returned slice.
-fn indexToRLP(allocator: Allocator, index: u16) ![]const u8 {
+fn indexToRLP(arena: Allocator, index: u16) ![]const u8 {
     if (index == 0) {
         return &[_]u8{0x80};
     }
     if (index <= 127) { // Small values RLP optimized.
-        var out = try allocator.alloc(u8, 1);
+        var out = try arena.alloc(u8, 1);
         out[0] = @intCast(index);
         return out;
     }
     if (index < 1 << 8) { // 1 byte.
-        var out = try allocator.alloc(u8, 1 + 1);
+        var out = try arena.alloc(u8, 1 + 1);
         out[0] = 0x81;
         out[1] = @intCast(index);
         return out;
     }
     // 2 bytes.
-    var out = try allocator.alloc(u8, 1 + 2);
+    var out = try arena.alloc(u8, 1 + 2);
     out[0] = 0x82;
     std.mem.writeInt(u16, out[1..3], index, std.builtin.Endian.Big);
     return out;
 }
 
-test "basic" {
+test "correctness" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var allocator = arena.allocator();
