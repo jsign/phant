@@ -59,6 +59,14 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
     var bn = BranchNode.init();
     var start: usize = 0;
     while (start < list.len) {
+        // We're in a corner case where there's a key/value that at this level has no more nibbles.
+        // This means the value must live in the BranchNode value field.
+        if (level == list[start].nibbles.len) {
+            bn.value = list[start].value;
+            start += 1;
+            continue;
+        }
+
         // Detect the next slice of list that share the same first nibble.
         var end = start;
         for (start..list.len) |i| {
@@ -77,8 +85,12 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
             // Detect the longest common prefix of all elements in list.
             var prefix_index: usize = level + 1;
             Loop: while (true) {
+                // If prefix_index already covers all the head element, that's how far we can go.
+                if (head.nibbles.len == prefix_index) {
+                    break :Loop;
+                }
                 for (tail) |t| {
-                    if (t.nibbles[prefix_index] != head.nibbles[prefix_index]) {
+                    if (prefix_index == t.nibbles.len or t.nibbles[prefix_index] != head.nibbles[prefix_index]) {
                         break :Loop;
                     }
                 }
@@ -362,7 +374,7 @@ test "correctness" {
             .exp_hash = comptime common.comptimeHexToBytes("86d4d51eedae1cd8ffdfeef48e5f1cd021d84c8d3df0088dfad39e72b37fc4b1"),
         },
         .{
-            .name = "two keys - root is a extension node of 3 nibbles",
+            .name = "two keys - root is a extension node of 3 nibbles and two leaf nodes",
             // The first three nibbles (i.e: 0x00f) will be in the extension node.
             .keyvals = &[_]KeyVal{
                 try KeyVal.init(allocator, &[_]u8{ 0, 0xf1, 3, 4 }, "hello1"),
@@ -371,7 +383,7 @@ test "correctness" {
             .exp_hash = comptime common.comptimeHexToBytes("312b81f16960a816e84679c5b9de49471b07b5c11ef0eff19779b083e418f83b"),
         },
         .{
-            .name = "complex - tree with 5 levels, 3 branch nodes, 2 extension nodes, 4 leaf node",
+            .name = "complex - tree with 5 levels, 3 branch nodes, 2 extension nodes, 4 leaf nodes",
             .keyvals = &[_]KeyVal{
                 try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x81 }, "hello1"), // BN -> EN(34) -> BN -> EN(578) -> LN(1)
                 try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x83 }, "hello2"), // BN -> EN(34) -> BN -> EN(578) -> LN(3)
@@ -379,6 +391,17 @@ test "correctness" {
                 try KeyVal.init(allocator, &[_]u8{ 0xFF, 1, 2, 3 }, "hello4"), // BN -> LN(FF010203)
             },
             .exp_hash = comptime common.comptimeHexToBytes("c66c75a03f2b52dfc32b5e229bb2ff7e1d53dcb2b54fe83a1b39418788e0fc66"),
+        },
+        .{
+            .name = "complex - tree with 5 levels, 3 branch nodes (one of them with a value), 2 extension nodes, 4 leaf nodes",
+            .keyvals = &[_]KeyVal{
+                try KeyVal.init(allocator, &[_]u8{0x34}, "hello1"), // BN -> EN(34) -> BN [This is the BN that has a value]
+                try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x81 }, "hello2"), // BN -> EN(34) -> BN -> EN(578) -> LN(1)
+                try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x83 }, "hello3"), // BN -> EN(34) -> BN -> EN(578) -> LN(3)
+                try KeyVal.init(allocator, &[_]u8{ 0x34, 0x5F, 2, 3 }, "hello4"), // BN -> EN(34) -> BN -> LN(5F0203)
+                try KeyVal.init(allocator, &[_]u8{ 0xFF, 1, 2, 3 }, "hello5"), // BN -> LN(FF010203)
+            },
+            .exp_hash = comptime common.comptimeHexToBytes("77101431dbbfbc7862dbd01e0a12e9490c96812db3c939773f693a9ef0bd9356"),
         },
     };
 
