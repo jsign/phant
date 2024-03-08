@@ -52,7 +52,7 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
     }
 
     var bn = BranchNode.init();
-    var start = level;
+    var start: usize = 0;
     while (start < list.len) {
         var end = start;
         for (start..list.len) |i| {
@@ -65,9 +65,25 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
 
         // Extension node.
         if (start == 0 and end == list.len) {
-            @panic("TODO");
+            var head = list[0];
+            var tail = list[1..];
+            var prefix_index: usize = level + 1;
+            Loop: while (true) {
+                for (tail) |t| {
+                    if (t.nibbles[prefix_index] != head.nibbles[prefix_index]) {
+                        break :Loop;
+                    }
+                }
+                prefix_index += 1;
+            }
+
+            var next = try insertNode(allocator, list, prefix_index);
+            const node_rlp = try next.encodeRLP(allocator);
+            var rlp_value: GenericRLPValue = if (node_rlp.len < 32) try next.getRLPValue(allocator) else .{ .value = try next.hash(allocator) };
+            return .{ .extension_node = ExtensionNode.init(head.nibbles[0..prefix_index], rlp_value) };
         }
 
+        // TODO: avoid repetition
         const nibble_group = list[start..end];
         const node = try insertNode(allocator, nibble_group, level + 1);
         const node_rlp = try node.encodeRLP(allocator);
@@ -79,9 +95,21 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
     return .{ .branch_node = bn };
 }
 
+const GenericRLPValue = union(enum) {
+    value: []const u8,
+    list: []const GenericRLPValue,
+
+    pub fn encodeToRLP(self: GenericRLPValue, allocator: Allocator, list: *std.ArrayList(u8)) !void {
+        switch (self) {
+            inline else => |v| try rlp.serialize(@TypeOf(v), allocator, v, list),
+        }
+    }
+};
+
 const Node = union(enum) {
     empty_node: EmptyNode,
     branch_node: BranchNode,
+    extension_node: ExtensionNode,
     leaf_node: LeafNode,
 
     pub fn getRLPValue(self: Node, allocator: Allocator) !GenericRLPValue {
@@ -123,14 +151,39 @@ const EmptyNode = struct {
     }
 };
 
-const GenericRLPValue = union(enum) {
-    value: []const u8,
-    list: []const GenericRLPValue,
+const ExtensionNode = struct {
+    nibbles: []const u8,
+    next: GenericRLPValue,
 
-    pub fn encodeToRLP(self: GenericRLPValue, allocator: Allocator, list: *std.ArrayList(u8)) !void {
-        switch (self) {
-            inline else => |v| try rlp.serialize(@TypeOf(v), allocator, v, list),
-        }
+    pub fn init(nibbles: []const u8, next: GenericRLPValue) ExtensionNode {
+        return .{
+            .nibbles = nibbles,
+            .next = next,
+        };
+    }
+
+    pub fn getRLPValue(self: ExtensionNode, allocator: Allocator) !GenericRLPValue {
+        var rlp_value = try allocator.alloc(GenericRLPValue, 2);
+        rlp_value[0] = .{ .value = try encodeNibbles(false, allocator, self.nibbles) };
+        rlp_value[1] = self.next;
+
+        return .{ .list = rlp_value };
+    }
+
+    pub fn encodeRLP(self: ExtensionNode, allocator: Allocator) ![]const u8 {
+        const rlp_value = try self.getRLPValue(allocator);
+        var out = std.ArrayList(u8).init(allocator);
+        try rlp.serialize(@TypeOf(rlp_value), allocator, rlp_value, &out);
+
+        return out.toOwnedSlice();
+    }
+
+    pub fn hash(self: ExtensionNode, allocator: Allocator) !*Hash32 {
+        var rlp_encoded = try self.encodeRLP(allocator);
+
+        var hsh = try allocator.create(Hash32);
+        @memcpy(hsh, &hasher.keccak256(rlp_encoded));
+        return hsh;
     }
 };
 
@@ -177,37 +230,9 @@ const LeafNode = struct {
     value: []const u8,
 
     pub fn getRLPValue(self: LeafNode, allocator: Allocator) !GenericRLPValue {
-        // Calculate rlp_nibbles which adds the prefix nibble to the key nibbles.
-        const required_extra_prefix_nibble = self.extra_nibbles.len % 2 == 0;
-
-        var total_nibbles = self.extra_nibbles.len;
-        total_nibbles += if (required_extra_prefix_nibble) 2 else 1;
-
-        var rlp_nibbles = try allocator.alloc(u8, total_nibbles / 2);
-        @memset(rlp_nibbles, 0);
-
-        var curr_byte: usize = undefined;
-        var curr_shift: u3 = undefined;
-        if (required_extra_prefix_nibble) {
-            rlp_nibbles[0] = 0b10 << 4;
-            curr_byte = 1;
-            curr_shift = 4;
-        } else {
-            rlp_nibbles[0] = 0b11 << 4;
-            curr_byte = 0;
-            curr_shift = 0;
-        }
-
-        for (self.extra_nibbles) |nibble| {
-            rlp_nibbles[curr_byte] |= nibble << curr_shift;
-            if (curr_shift == 0)
-                curr_byte += 1;
-            curr_shift = if (curr_shift == 4) 0 else 4;
-        }
-
         // Calculate the RLP representation of the value.
         var out = try allocator.alloc(GenericRLPValue, 2);
-        out[0] = .{ .value = rlp_nibbles };
+        out[0] = .{ .value = try encodeNibbles(true, allocator, self.extra_nibbles) };
         out[1] = .{ .value = self.value };
 
         return .{ .list = out };
@@ -232,6 +257,38 @@ const LeafNode = struct {
         return hsh;
     }
 };
+
+fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, extra_nibbles: []const u8) ![]const u8 {
+    // Calculate rlp_nibbles which adds the prefix nibble to the key nibbles.
+    const required_extra_prefix_nibble = extra_nibbles.len % 2 == 0;
+
+    var total_nibbles = extra_nibbles.len;
+    total_nibbles += if (required_extra_prefix_nibble) 2 else 1;
+
+    var rlp_nibbles = try allocator.alloc(u8, total_nibbles / 2);
+    @memset(rlp_nibbles, 0);
+
+    var curr_byte: usize = undefined;
+    var curr_shift: u3 = undefined;
+    if (required_extra_prefix_nibble) {
+        rlp_nibbles[0] = (if (is_leaf_node) 0b10 else 0b00) << 4;
+        curr_byte = 1;
+        curr_shift = 4;
+    } else {
+        rlp_nibbles[0] = (if (is_leaf_node) 0b11 else 0b01) << 4;
+        curr_byte = 0;
+        curr_shift = 0;
+    }
+
+    for (extra_nibbles) |nibble| {
+        rlp_nibbles[curr_byte] |= nibble << curr_shift;
+        if (curr_shift == 0)
+            curr_byte += 1;
+        curr_shift = if (curr_shift == 4) 0 else 4;
+    }
+
+    return rlp_nibbles;
+}
 
 // indexToRLP returns the RLP representation of the index.
 // The caller is responsible for freeing the returned slice.
@@ -294,6 +351,15 @@ test "basic" {
                 try KeyVal.init(allocator, &[_]u8{ 3 << 4, 2, 3, 4 }, "hello333333333333333333333333333"), // RLP encoding len >= 32
             },
             .exp_hash = comptime common.comptimeHexToBytes("86d4d51eedae1cd8ffdfeef48e5f1cd021d84c8d3df0088dfad39e72b37fc4b1"),
+        },
+        .{
+            .name = "two keys - root is a extension node of 3 nibbles",
+            // The first three nibbles (i.e: 0x00f) will be in the extension node.
+            .keyvals = &[_]KeyVal{
+                try KeyVal.init(allocator, &[_]u8{ 0, 0xf1, 3, 4 }, "hello1"),
+                try KeyVal.init(allocator, &[_]u8{ 0, 0xf2, 3, 4 }, "hello2"),
+            },
+            .exp_hash = comptime common.comptimeHexToBytes("312b81f16960a816e84679c5b9de49471b07b5c11ef0eff19779b083e418f83b"),
         },
     };
 
