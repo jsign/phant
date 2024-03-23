@@ -378,9 +378,10 @@ test "correctness" {
                 try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x81 }, "hello2"), // BN -> EN(34) -> BN -> EN(578) -> LN(1)
                 try KeyVal.init(allocator, &[_]u8{ 0x34, 0x57, 0x83 }, "hello3"), // BN -> EN(34) -> BN -> EN(578) -> LN(3)
                 try KeyVal.init(allocator, &[_]u8{ 0x34, 0x5F, 2, 3 }, "hello4"), // BN -> EN(34) -> BN -> LN(5F0203)
+                try KeyVal.init(allocator, &[_]u8{ 0xEF, 1, 2, 3 }, "0123456789012345678901234567890123456789"), // BN -> LN(EF010203) (value with length 40)
                 try KeyVal.init(allocator, &[_]u8{ 0xFF, 1, 2, 3 }, "hello5"), // BN -> LN(FF010203)
             },
-            .exp_hash = comptime common.comptimeHexToBytes("77101431dbbfbc7862dbd01e0a12e9490c96812db3c939773f693a9ef0bd9356"),
+            .exp_hash = comptime common.comptimeHexToBytes("88a4fc29676ebee58aafcd377acd46af6d29044f9bb8220c50ca8dcfe5153fb3"),
         },
     };
 
