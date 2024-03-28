@@ -70,15 +70,15 @@ pub const VM = struct {
             .gas = @intCast(msg.gas),
             .recipient = toEVMCAddress(msg.current_target),
             .sender = toEVMCAddress(msg.caller),
-            .input_data = msg.data.ptr,
-            .input_size = msg.data.len,
+            .input_data = if (msg.target != null) msg.data.ptr else msg.code.ptr,
+            .input_size = if (msg.target != null) msg.data.len else msg.code.len,
             .value = blk: {
                 var tx_value: [32]u8 = undefined;
                 std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
                 break :blk .{ .bytes = tx_value };
             },
             .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
-            .code_address = toEVMCAddress(msg.code_address),
+            .code_address = toEVMCAddress(msg.target),
         };
 
         const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
@@ -402,8 +402,16 @@ const EVMOneHost = struct {
             };
         }
 
-        const code_address = fromEVMCAddress(msg.*.code_address);
-        const code = vm.env.state.getAccount(code_address).code;
+        const code = switch (msg.*.kind) {
+            evmc.EVMC_CALL, evmc.EVMC_DELEGATECALL, evmc.EVMC_CALLCODE => blk: {
+                const code_address = fromEVMCAddress(msg.*.code_address);
+                const code = vm.env.state.getAccount(code_address).code;
+                break :blk code;
+            },
+            evmc.EVMC_CREATE, evmc.EVMC_CREATE2 => msg.*.input_data[0..msg.*.input_size],
+            else => @panic("unkown message kind"),
+        };
+
         var result = vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),
@@ -415,6 +423,12 @@ const EVMOneHost = struct {
         );
 
         if (result.status_code == evmc.EVMC_SUCCESS) {
+            if (msg.*.kind == evmc.EVMC_CREATE or msg.*.kind == evmc.EVMC_CREATE2) {
+                vm.env.state.setContractCode(recipient_addr, result.output_data[0..result.output_size]) catch |err| switch (err) {
+                    error.OutOfMemory => @panic("OOO"),
+                    error.AccountAlreadyHasCode => @panic("account already has code"),
+                };
+            }
             // Free the backup and indireclty commit to the changes that happened.
             prev_statedb.deinit();
 
@@ -428,7 +442,8 @@ const EVMOneHost = struct {
             vm.env.state.* = prev_statedb;
         }
 
-        evmclog.debug("call() depth={d} ended", .{msg.*.depth});
+        evmclog.debug("call() end depth={d} status_code={} gas_left={}", .{ msg.*.depth, result.status_code, result.gas_left });
+
         return result;
     }
 };

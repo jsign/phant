@@ -346,7 +346,7 @@ pub const Blockchain = struct {
 
     // prepareMessage prepares an EVM message.
     // The caller must call deinit() on the returned Message.
-    fn prepareMessage(
+    pub fn prepareMessage(
         allocator: Allocator,
         caller: Address,
         target: ?Address,

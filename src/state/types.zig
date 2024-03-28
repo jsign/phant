@@ -26,13 +26,14 @@ pub const AccountState = struct {
             .addr = addr,
             .nonce = nonce,
             .balance = balance,
-            .code = try allocator.dupe(u8, code),
+            .code = if (code.len > 0) try allocator.dupe(u8, code) else code,
             .storage = std.AutoHashMap(u256, Bytes32).init(allocator),
         };
     }
 
     pub fn deinit(self: *AccountState) void {
         self.storage.deinit();
-        self.allocator.free(self.code);
+        if (self.code.len > 0)
+            self.allocator.free(self.code);
     }
 };

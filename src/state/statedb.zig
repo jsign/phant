@@ -29,7 +29,7 @@ pub const StateDB = struct {
     accessed_accounts: AddressSet,
     accessed_storage_keys: AddressKeySet,
 
-    pub fn init(allocator: Allocator, accounts: []AccountState) !StateDB {
+    pub fn init(allocator: Allocator, accounts: []const AccountState) !StateDB {
         var db = AccountDB.init(allocator);
         try db.ensureTotalCapacity(@intCast(accounts.len));
         for (accounts) |account| {
@@ -45,9 +45,15 @@ pub const StateDB = struct {
     }
 
     pub fn deinit(self: *StateDB) void {
+        var key_iterator = self.db.keyIterator();
+        while (key_iterator.next()) |addr| {
+            self.db.getPtr(addr.*).?.deinit();
+        }
         self.db.deinit();
+
         self.accessed_accounts.deinit();
         self.accessed_storage_keys.deinit();
+
         if (self.original_db) |*original_db| {
             original_db.deinit();
         }
@@ -128,6 +134,17 @@ pub const StateDB = struct {
 
     pub fn destroyAccount(self: *StateDB, addr: Address) void {
         _ = self.db.remove(addr);
+    }
+
+    pub fn setContractCode(self: *StateDB, addr: Address, code: []const u8) !void {
+        var account = self.db.getPtr(addr);
+        if (account) |acc| {
+            if (acc.code.len > 0)
+                return error.AccountAlreadyHasCode;
+            acc.code = try acc.allocator.dupe(u8, code);
+            return;
+        }
+        try self.db.put(addr, try AccountState.init(self.allocator, addr, 0, 0, code));
     }
 
     pub fn accountExistsAndIsEmpty(self: *StateDB, addr: Address) bool {
