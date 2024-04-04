@@ -3,8 +3,8 @@
     .version = "0.0.1-beta-0",
     .dependencies = .{
         .@"zig-rlp" = .{
-            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.0.tar.gz",
-            .hash = "1220ebf62505957cdd9c87b9c517ceba60c46f5c9578a504ab3299b3970cc3ab0a1d",
+            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.1-beta-2.tar.gz",
+            .hash = "1220c5c30358d002e78914e80a3fe5456c9576451e0c60955965346ec68e37e83f8a",
         },
         .@"zig-eth-secp256k1" = .{
             .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-4.tar.gz",

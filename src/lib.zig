@@ -11,4 +11,5 @@ test "tests" {
     std.testing.refAllDeclsRecursive(@import("tests/custom_tests.zig"));
     std.testing.refAllDeclsRecursive(@import("state/state.zig"));
     std.testing.refAllDeclsRecursive(@import("types/types.zig"));
+    std.testing.refAllDeclsRecursive(@import("mpt/mpt.zig"));
 }
