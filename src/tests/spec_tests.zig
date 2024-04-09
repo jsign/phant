@@ -218,13 +218,23 @@ const AccountStorageHex = std.json.ArrayHashMap(HexString);
 test "execution-spec-tests" {
     var allocator = std.testing.allocator;
 
-    var ft = try Fixture.fromBytes(allocator, @embedFile("fixtures/shanghai/warm_coinbase_call_out_of_gas.json"));
-    defer ft.deinit();
+    var test_folder = try std.fs.cwd().openIterableDir("src/tests/fixtures", .{});
+    defer test_folder.close();
 
-    var it = ft.tests.value.map.iterator();
-    var count: usize = 0;
-    while (it.next()) |entry| {
-        try std.testing.expect(try entry.value_ptr.run(allocator));
-        count += 1;
+    var test_it = try test_folder.walk(allocator);
+    defer test_it.deinit();
+    while (try test_it.next()) |f| {
+        if (f.kind == .directory) continue;
+
+        var file_content = try f.dir.readFileAlloc(allocator, f.basename, 1 << 30);
+        defer allocator.free(file_content);
+
+        var ft = try Fixture.fromBytes(allocator, file_content);
+        defer ft.deinit();
+
+        var it = ft.tests.value.map.iterator();
+        while (it.next()) |entry| {
+            try std.testing.expect(try entry.value_ptr.run(allocator));
+        }
     }
 }
