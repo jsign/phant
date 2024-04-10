@@ -3,7 +3,7 @@
     .version = "0.0.1-beta-0",
     .dependencies = .{
         .@"zig-rlp" = .{
-            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.1-beta-3.tar.gz",
+            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.1-beta-4.tar.gz",
             .hash = "12207d5d331091c835da96acd796602dd90333bd5b9b59aca3f776283bb3d17cee7c",
         },
         .@"zig-eth-secp256k1" = .{

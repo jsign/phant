@@ -229,9 +229,7 @@ pub const Blockchain = struct {
             }
         }
 
-        const hello = try mpt.mptize(arena, keyvals);
-
-        return hello;
+        return try mpt.mptize(arena, keyvals);
     }
 
     fn checkTransaction(allocator: Allocator, tx: transaction.Tx, base_fee_per_gas: u256, gas_available: u64, tx_signer: TxSigner) !struct { sender_address: Address, effective_gas_price: u256 } {
