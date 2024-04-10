@@ -9,12 +9,14 @@ const rlp = @import("zig-rlp");
 const signer = @import("../signer/signer.zig");
 const params = @import("params.zig");
 const blockchain_types = @import("types.zig");
+const mpt = @import("../mpt/mpt.zig");
 const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
 const AddresssKey = common.AddressKey;
 const AddressKeySet = common.AddressKeySet;
 const LogsBloom = types.LogsBloom;
 const Block = types.Block;
+const Tx = types.Tx;
 const BlockHeader = types.BlockHeader;
 const Environment = blockchain_types.Environment;
 const Message = blockchain_types.Message;
@@ -70,9 +72,8 @@ pub const Blockchain = struct {
         // Post execution checks.
         if (result.gas_used != block.header.gas_used)
             return error.InvalidGasUsed;
-        // TODO: disabled until txs root is calculated
-        // if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
-        //     return error.InvalidTransactionsRoot;
+        if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
+            return error.InvalidTransactionsRoot;
         // TODO: disabled until receipts root is calculated
         // if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root))
         //     return error.InvalidReceiptsRoot;
@@ -194,11 +195,39 @@ pub const Blockchain = struct {
 
         return .{
             .gas_used = block_gas_used,
-            .transactions_root = std.mem.zeroes(Hash32), // TODO
+            .transactions_root = try generateTxsRoot(allocator, block.transactions),
             .receipts_root = std.mem.zeroes(Hash32), // TODO
             .logs_bloom = block.header.logs_bloom,
             .withdrawals_root = std.mem.zeroes(Hash32), // TODO
         };
+    }
+
+    fn generateTxsRoot(arena: Allocator, txs: []types.Tx) !Hash32 {
+        var keyvals = try arena.alloc(mpt.KeyVal, txs.len);
+        defer arena.free(keyvals);
+
+        var buf = std.ArrayList(u8).init(arena);
+        if (txs.len > 0) {
+            defer buf.clearRetainingCapacity();
+            try txs[0].encode(arena, &buf);
+            keyvals[0] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, buf.items);
+        }
+        var i: usize = 1;
+        while (i < txs.len) : (i += 1) {
+            defer buf.clearRetainingCapacity();
+            try txs[0].encode(arena, &buf);
+
+            if (i < 0x7F) {
+                keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{@as(u8, @intCast(i))}, buf.items);
+            } else {
+                var out = std.ArrayList(u8).init(arena);
+                defer out.deinit();
+                try rlp.serialize(usize, arena, i, &out);
+                keyvals[i] = try mpt.KeyVal.init(arena, out.items, buf.items);
+            }
+        }
+
+        return mpt.mptize(arena, keyvals);
     }
 
     fn checkTransaction(allocator: Allocator, tx: transaction.Tx, base_fee_per_gas: u256, gas_available: u64, tx_signer: TxSigner) !struct { sender_address: Address, effective_gas_price: u256 } {

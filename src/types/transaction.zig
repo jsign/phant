@@ -2,6 +2,7 @@ const std = @import("std");
 const rlp = @import("zig-rlp");
 const types = @import("types.zig");
 const common = @import("../common/common.zig");
+const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const Hash32 = types.Hash32;
@@ -42,6 +43,21 @@ pub const Tx = union(TxTypes) {
         return error.UnsupportedTxType;
     }
 
+    pub fn encode(self: *Tx, arena: Allocator, list: *ArrayList(u8)) !void {
+        switch (self.*) {
+            .LegacyTx => |tx| try rlp.serialize(LegacyTx, arena, tx, list),
+            .AccessListTx => |tx| {
+                try list.append(0x01);
+                try rlp.serialize(AccessListTx, arena, tx, list);
+            },
+            .FeeMarketTx => |tx| {
+                try list.append(0x01);
+                try rlp.serialize(FeeMarketTx, arena, tx, list);
+            },
+        }
+    }
+
+    // decodeFromRLP is an override method from zig-rlp so we can do custom decoding for the Tx type.
     pub fn decodeFromRLP(self: *Tx, arena: Allocator, serialized: []const u8) !usize {
         if (serialized[0] > 0xC0) { // Is a RLP struct (i.e: LegacyTx)
             var ltx: LegacyTx = undefined;
