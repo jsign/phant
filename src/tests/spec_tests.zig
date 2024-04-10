@@ -94,7 +94,6 @@ pub const FixtureTest = struct {
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
             var exp_account_state: AccountState = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
-            std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
                 log.err("expected nonce {d} but got {d}", .{ exp_account_state.nonce, got_account_state.nonce });
@@ -203,6 +202,7 @@ test "execution-spec-tests" {
     while (try test_it.next()) |f| {
         if (f.kind == .directory) continue;
 
+        std.log.debug("##### Running test {s} #####", .{f.basename});
         var file_content = try f.dir.readFileAlloc(allocator, f.basename, 1 << 30);
         defer allocator.free(file_content);
 
