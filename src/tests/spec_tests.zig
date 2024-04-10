@@ -157,34 +157,6 @@ pub const TransactionHex = struct {
     r: HexString,
     s: HexString,
     sender: HexString,
-
-    pub fn toTx(self: TransactionHex, allocator: Allocator, tx_signer: TxSigner) !Tx {
-        const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
-        std.debug.assert(type_ == 0);
-        const chain_id = try std.fmt.parseInt(u64, self.chainId[2..], 16);
-        if (chain_id != tx_signer.chain_id) {
-            return error.InvalidChainId;
-        }
-        const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
-        const gas_price = try std.fmt.parseUnsigned(u256, self.gasPrice[2..], 16);
-        const value = try std.fmt.parseUnsigned(u256, self.value[2..], 16);
-        var to: ?Address = null;
-        if (self.to[2..].len != 0) {
-            to = std.mem.zeroes(Address);
-            _ = try std.fmt.hexToBytes(&to.?, self.to[2..]);
-        }
-        var data = try allocator.alloc(u8, self.data[2..].len / 2);
-        _ = try std.fmt.hexToBytes(data, self.data[2..]);
-        const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
-
-        var tx = Tx.initLegacyTx(nonce, gas_price, value, to, data, gas_limit);
-        var sig_v = try common.prefixedHexToInt(u256, self.v);
-        var sig_r = try common.prefixedHexToInt(u256, self.r);
-        var sig_s = try common.prefixedHexToInt(u256, self.s);
-        tx.setSignature(sig_v, sig_r, sig_s);
-
-        return tx;
-    }
 };
 
 pub const AccountStateHex = struct {
