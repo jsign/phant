@@ -1,7 +1,9 @@
 const std = @import("std");
 const types = @import("types.zig");
 const crypto = @import("../crypto/crypto.zig");
+const rlp = @import("zig-rlp");
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 const hasher = crypto.hasher;
 const Hash32 = types.Hash32;
 const Address = types.Address;
@@ -9,21 +11,27 @@ const LogsBloom = types.LogsBloom;
 const TxTypes = types.TxTypes;
 
 pub const Receipt = struct {
-    tx_type: TxTypes,
-
     succeeded: bool,
     cumulative_gas_used: u64,
     bloom: LogsBloom,
     logs: []Log,
 
-    pub fn init(tx_type: TxTypes, succeeded: bool, cumulative_gas_used: u64, logs: []Log) Receipt {
+    pub fn init(succeeded: bool, cumulative_gas_used: u64, logs: []Log) Receipt {
         return Receipt{
-            .tx_type = tx_type,
             .succeeded = succeeded,
             .cumulative_gas_used = cumulative_gas_used,
             .bloom = calculateLogsBloom(logs),
             .logs = logs,
         };
+    }
+
+    // encode returns the RLP encoding of the receipt. The caller is responsible for freeing the returned slice.
+    pub fn encode(self: Receipt, allocator: Allocator) ![]const u8 {
+        var out = ArrayList(u8).init(allocator);
+        defer out.deinit();
+        try rlp.serialize(Receipt, allocator, self, &out);
+
+        return out.toOwnedSlice();
     }
 
     fn calculateLogsBloom(logs: []Log) LogsBloom {

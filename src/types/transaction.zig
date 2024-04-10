@@ -43,18 +43,22 @@ pub const Tx = union(TxTypes) {
         return error.UnsupportedTxType;
     }
 
-    pub fn encode(self: *Tx, arena: Allocator, list: *ArrayList(u8)) !void {
+    // encode encodes a transaction to RLP. The caller is responsible for freeing the returned bytes.
+    pub fn encode(self: *Tx, arena: Allocator) ![]const u8 {
+        var list = ArrayList(u8).init(arena);
+        defer list.deinit();
         switch (self.*) {
-            .LegacyTx => |tx| try rlp.serialize(LegacyTx, arena, tx, list),
+            .LegacyTx => |tx| try rlp.serialize(LegacyTx, arena, tx, &list),
             .AccessListTx => |tx| {
                 try list.append(0x01);
-                try rlp.serialize(AccessListTx, arena, tx, list);
+                try rlp.serialize(AccessListTx, arena, tx, &list);
             },
             .FeeMarketTx => |tx| {
-                try list.append(0x01);
-                try rlp.serialize(FeeMarketTx, arena, tx, list);
+                try list.append(0x02);
+                try rlp.serialize(FeeMarketTx, arena, tx, &list);
             },
         }
+        return list.toOwnedSlice();
     }
 
     // decodeFromRLP is an override method from zig-rlp so we can do custom decoding for the Tx type.

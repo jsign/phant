@@ -74,9 +74,8 @@ pub const Blockchain = struct {
             return error.InvalidGasUsed;
         if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
             return error.InvalidTransactionsRoot;
-        // TODO: disabled until receipts root is calculated
-        // if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root))
-        //     return error.InvalidReceiptsRoot;
+        if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root))
+            return error.InvalidReceiptsRoot;
         // TODO: disabled until state root is calculated
         // if (!std.mem.eql(u8, &self.state.root(), &block.header.state_root))
         //     return error.InvalidStateRoot;
@@ -158,7 +157,11 @@ pub const Blockchain = struct {
 
     fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, tx_signer: TxSigner) !BlockExecutionResult {
         var gas_available = block.header.gas_limit;
-        for (block.transactions) |tx| {
+
+        var receipts = try allocator.alloc(Receipt, block.transactions.len);
+        defer allocator.free(receipts);
+
+        for (block.transactions, 0..) |tx, i| {
             const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, tx_signer);
 
             const env: Environment = .{
@@ -181,8 +184,7 @@ pub const Blockchain = struct {
 
             // Create receipt.
             const cumm_gas_used = block.header.gas_limit - gas_available;
-            const receipt = Receipt.init(tx, exec_tx_result.success, cumm_gas_used, &[_]Log{});
-            _ = receipt;
+            receipts[i] = Receipt.init(exec_tx_result.success, cumm_gas_used, &[_]Log{});
 
             // TODO: do tx logs aggregation.
         }
@@ -195,39 +197,41 @@ pub const Blockchain = struct {
 
         return .{
             .gas_used = block_gas_used,
-            .transactions_root = try generateTxsRoot(allocator, block.transactions),
-            .receipts_root = std.mem.zeroes(Hash32), // TODO
+            .transactions_root = try calculateMPTRoot(allocator, block.transactions),
+            .receipts_root = try calculateMPTRoot(allocator, receipts),
             .logs_bloom = block.header.logs_bloom,
             .withdrawals_root = std.mem.zeroes(Hash32), // TODO
         };
     }
 
-    fn generateTxsRoot(arena: Allocator, txs: []types.Tx) !Hash32 {
-        var keyvals = try arena.alloc(mpt.KeyVal, txs.len);
+    // calculateMPTRoot generates a MPT tree of the items where keys are their index in the `items` slice.
+    // The `items` slice type must implement an `encode(Allocator)` function that returns the RLP encoding.
+    fn calculateMPTRoot(arena: Allocator, items: anytype) !Hash32 {
+        var keyvals = try arena.alloc(mpt.KeyVal, items.len);
         defer arena.free(keyvals);
 
-        var buf = std.ArrayList(u8).init(arena);
-        if (txs.len > 0) {
-            defer buf.clearRetainingCapacity();
-            try txs[0].encode(arena, &buf);
-            keyvals[0] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, buf.items);
+        if (items.len > 0) {
+            var encoded_item = try items[0].encode(arena);
+            keyvals[0] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, encoded_item);
         }
         var i: usize = 1;
-        while (i < txs.len) : (i += 1) {
-            defer buf.clearRetainingCapacity();
-            try txs[0].encode(arena, &buf);
+        while (i < items.len) : (i += 1) {
+            const encoded_item = try items[i].encode(arena);
 
             if (i < 0x7F) {
-                keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{@as(u8, @intCast(i))}, buf.items);
+                keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{@as(u8, @intCast(i))}, encoded_item);
             } else {
                 var out = std.ArrayList(u8).init(arena);
                 defer out.deinit();
+
                 try rlp.serialize(usize, arena, i, &out);
-                keyvals[i] = try mpt.KeyVal.init(arena, out.items, buf.items);
+                keyvals[i] = try mpt.KeyVal.init(arena, out.items, encoded_item);
             }
         }
 
-        return mpt.mptize(arena, keyvals);
+        const hello = try mpt.mptize(arena, keyvals);
+
+        return hello;
     }
 
     fn checkTransaction(allocator: Allocator, tx: transaction.Tx, base_fee_per_gas: u256, gas_available: u64, tx_signer: TxSigner) !struct { sender_address: Address, effective_gas_price: u256 } {
