@@ -210,23 +210,25 @@ pub const Blockchain = struct {
         var keyvals = try arena.alloc(mpt.KeyVal, items.len);
         defer arena.free(keyvals);
 
+        var i: usize = 0;
+        while (i + 1 < items.len and i != 0x80) : (i += 1) {
+            const encoded_item = try items[i + 1].encode(arena);
+            keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{@as(u8, @intCast(i + 1))}, encoded_item);
+        }
+
         if (items.len > 0) {
             var encoded_item = try items[0].encode(arena);
-            keyvals[0] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, encoded_item);
+            keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, encoded_item);
+            i += 1;
         }
-        var i: usize = 1;
+
         while (i < items.len) : (i += 1) {
+            var out = std.ArrayList(u8).init(arena);
+            defer out.deinit();
+            try rlp.serialize(usize, arena, i, &out);
+
             const encoded_item = try items[i].encode(arena);
-
-            if (i < 0x7F) {
-                keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{@as(u8, @intCast(i))}, encoded_item);
-            } else {
-                var out = std.ArrayList(u8).init(arena);
-                defer out.deinit();
-
-                try rlp.serialize(usize, arena, i, &out);
-                keyvals[i] = try mpt.KeyVal.init(arena, out.items, encoded_item);
-            }
+            keyvals[i] = try mpt.KeyVal.init(arena, out.items, encoded_item);
         }
 
         return try mpt.mptize(arena, keyvals);

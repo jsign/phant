@@ -27,17 +27,16 @@ pub const KeyVal = struct {
 
         return .{ .nibbles = nibbles, .value = value };
     }
+
+    pub fn lessThan(_: void, a: KeyVal, b: KeyVal) bool {
+        return std.mem.lessThan(u8, a.nibbles, b.nibbles);
+    }
 };
 
 // mptize returns the root hash of a Merkle Patricia Trie that contains all provided `list` elements.
 // The elements in `list` *must* be sorted by key. The caller must pass an arena allocator to `allocator`.
 pub fn mptize(arena: Allocator, list: []const KeyVal) !Hash32 {
-    const s = struct {
-        fn lessThan(_: void, a: KeyVal, b: KeyVal) bool {
-            return std.mem.lessThan(u8, a.nibbles, b.nibbles);
-        }
-    };
-    std.debug.assert(std.sort.isSorted(KeyVal, list, {}, s.lessThan));
+    std.debug.assert(std.sort.isSorted(KeyVal, list, {}, KeyVal.lessThan));
 
     const root = try insertNode(arena, list, 0);
     const root_hash = try root.hash(arena);
