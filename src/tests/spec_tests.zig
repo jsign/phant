@@ -6,6 +6,7 @@ const blockchain = @import("../blockchain/blockchain.zig");
 const vm = @import("../blockchain/vm.zig");
 const ecdsa = @import("../crypto/crypto.zig").ecdsa;
 const state = @import("../state/state.zig");
+const common = @import("../common/common.zig");
 const TxSigner = @import("../signer/signer.zig").TxSigner;
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
@@ -39,17 +40,18 @@ pub const Fixture = struct {
 pub const FixtureTest = struct {
     _info: struct {
         @"filling-transition-tool": []const u8,
-        @"filling-block-build-tool": []const u8,
+        @"reference-spec": []const u8,
+        @"reference-spec-version": []const u8,
     },
+    network: []const u8,
+    genesisRLP: HexString,
+    genesisBlockHeader: BlockHeaderHex,
     blocks: []const struct {
         rlp: []const u8,
         blockHeader: BlockHeaderHex,
         transactions: []TransactionHex,
     },
-    genesisBlockHeader: BlockHeaderHex,
-    genesisRLP: HexString,
     lastblockhash: HexString,
-    network: []const u8,
     pre: ChainState,
     postState: ChainState,
     sealEngine: []const u8,
@@ -78,7 +80,7 @@ pub const FixtureTest = struct {
         var out = try allocator.alloc(u8, self.genesisRLP.len / 2);
         var rlp_bytes = try std.fmt.hexToBytes(out, self.genesisRLP[2..]);
         const parent_block = try Block.decode(allocator, rlp_bytes);
-        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
+        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
 
         // Execute blocks.
         for (self.blocks) |encoded_block| {
@@ -138,6 +140,7 @@ pub const BlockHeaderHex = struct {
     extraData: HexString,
     mixHash: HexString,
     nonce: HexString,
+    baseFeePerGas: HexString,
     hash: HexString,
 };
 
@@ -146,12 +149,14 @@ pub const TransactionHex = struct {
     chainId: HexString,
     nonce: HexString,
     gasPrice: HexString,
-    value: HexString,
-    to: HexString,
-    protected: bool,
-    secretKey: HexString,
-    data: HexString,
     gasLimit: HexString,
+    to: HexString,
+    value: HexString,
+    data: HexString,
+    v: HexString,
+    r: HexString,
+    s: HexString,
+    sender: HexString,
 
     pub fn toTx(self: TransactionHex, allocator: Allocator, tx_signer: TxSigner) !Tx {
         const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
@@ -173,10 +178,10 @@ pub const TransactionHex = struct {
         const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
 
         var tx = Tx.initLegacyTx(nonce, gas_price, value, to, data, gas_limit);
-        var privkey: ecdsa.PrivateKey = undefined;
-        _ = try std.fmt.hexToBytes(&privkey, self.secretKey[2..]);
-        const sig = try tx_signer.sign(allocator, tx, privkey);
-        tx.setSignature(sig.v, sig.r, sig.s);
+        var sig_v = try common.prefixedHexToInt(u256, self.v);
+        var sig_r = try common.prefixedHexToInt(u256, self.r);
+        var sig_s = try common.prefixedHexToInt(u256, self.s);
+        tx.setSignature(sig_v, sig_r, sig_s);
 
         return tx;
     }
