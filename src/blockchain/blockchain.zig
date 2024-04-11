@@ -82,9 +82,8 @@ pub const Blockchain = struct {
         // TODO: disabled until logs bloom are calculated
         // if (!std.mem.eql(u8, &result.logs_bloom, &block.header.logs_bloom))
         //     return error.InvalidLogsBloom;
-        // TODO: disabled until withdrawals root is calculated
-        // if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root))
-        //     return error.InvalidWithdrawalsRoot;
+        if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root))
+            return error.InvalidWithdrawalsRoot;
 
         // Add the current block to the last 256 block hashes.
         // TODO: this can be done more efficiently with some ring buffer to avoid copying the slice
@@ -193,14 +192,14 @@ pub const Blockchain = struct {
 
         // TODO: logs bloom calculation.
 
-        // TODO: process withdrawals.
+        // for (block.withdrawals) |w| {}
 
         return .{
             .gas_used = block_gas_used,
             .transactions_root = try calculateMPTRoot(allocator, block.transactions),
             .receipts_root = try calculateMPTRoot(allocator, receipts),
             .logs_bloom = block.header.logs_bloom,
-            .withdrawals_root = std.mem.zeroes(Hash32), // TODO
+            .withdrawals_root = try calculateMPTRoot(allocator, block.withdrawals),
         };
     }
 
