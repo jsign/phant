@@ -313,7 +313,7 @@ pub const Blockchain = struct {
         const gas_refund_amount = (output.gas_left + gas_refund) * env.gas_price;
 
         const priority_fee_per_gas = env.gas_price - env.base_fee_per_gas;
-        const transaction_fee = (tx.getGasLimit() - output.gas_left) * priority_fee_per_gas;
+        const transaction_fee = (gas_used - gas_refund) * priority_fee_per_gas;
         const total_gas_used = gas_used - gas_refund;
 
         sender_account = env.state.getAccount(sender);
