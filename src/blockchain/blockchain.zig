@@ -192,7 +192,10 @@ pub const Blockchain = struct {
 
         // TODO: logs bloom calculation.
 
-        // for (block.withdrawals) |w| {}
+        for (block.withdrawals) |w| {
+            const newBalance = (state.getAccount(w.address).balance + w.amount) * std.math.pow(u256, 10, 9);
+            try state.setBalance(w.address, newBalance);
+        }
 
         return .{
             .gas_used = block_gas_used,
