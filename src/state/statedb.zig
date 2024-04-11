@@ -168,16 +168,27 @@ pub const StateDB = struct {
         try self.accessed_storage_keys.putNoClobber(addrkey, {});
     }
 
-    pub fn snapshot(self: StateDB) !StateDB {
+    pub fn snapshot(self: *StateDB) !StateDB {
         // TODO: while simple this is quite inefficient.
         // A much smarter way is doing some "diff" style snapshotting or similar.
         return StateDB{
             .allocator = self.allocator,
-            .db = try self.db.clone(),
-            .original_db = try self.original_db.?.clone(),
+            .db = try dbDeepClone(self.allocator, &self.db),
+            .original_db = try dbDeepClone(self.allocator, &self.original_db.?),
             .accessed_accounts = try self.accessed_accounts.clone(),
             .accessed_storage_keys = try self.accessed_storage_keys.clone(),
             .touched_addresses = try self.touched_addresses.clone(),
         };
+    }
+
+    fn dbDeepClone(allocator: Allocator, db: *AccountDB) !AccountDB {
+        var ret = AccountDB.init(allocator);
+        try ret.ensureTotalCapacity(db.capacity());
+
+        var it = db.iterator();
+        while (it.next()) |kv| {
+            ret.putAssumeCapacityNoClobber(kv.key_ptr.*, try kv.value_ptr.clone());
+        }
+        return ret;
     }
 };

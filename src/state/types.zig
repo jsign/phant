@@ -31,6 +31,17 @@ pub const AccountState = struct {
         };
     }
 
+    pub fn clone(self: *const AccountState) !AccountState {
+        return AccountState{
+            .allocator = self.allocator,
+            .addr = self.addr,
+            .nonce = self.nonce,
+            .balance = self.balance,
+            .code = if (self.code.len > 0) try self.allocator.dupe(u8, self.code) else self.code,
+            .storage = try self.storage.clone(),
+        };
+    }
+
     pub fn deinit(self: *AccountState) void {
         self.storage.deinit();
         if (self.code.len > 0)
