@@ -411,8 +411,8 @@ const EVMOneHost = struct {
                 const code = vm.env.state.getAccount(code_address).code;
                 break :blk code;
             },
-            evmc.EVMC_CREATE, evmc.EVMC_CREATE2 => msg.*.input_data[0..msg.*.input_size],
-            else => @panic("unkown message kind"),
+            evmc.EVMC_CREATE, evmc.EVMC_CREATE2 => if (msg.*.input_size == 0) &[_]u8{} else msg.*.input_data[0..msg.*.input_size],
+            else => @panic("unknown message kind"),
         };
 
         var result = vm.evm.*.execute.?(
@@ -449,7 +449,8 @@ const EVMOneHost = struct {
                 result.create_address = .{ .bytes = contract_address };
                 vm.env.state.incrementNonce(sender) catch unreachable;
 
-                vm.env.state.setContractCode(contract_address, result.output_data[0..result.output_size]) catch |err| switch (err) {
+                const contract_code = if (result.output_size == 0) &[_]u8{} else result.output_data[0..result.output_size];
+                vm.env.state.setContractCode(contract_address, contract_code) catch |err| switch (err) {
                     error.OutOfMemory => @panic("OOO"),
                     error.AccountAlreadyHasCode => @panic("account already has code"),
                 };
