@@ -24,15 +24,17 @@ const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e5
 pub const VM = struct {
     const vmlog = std.log.scoped(.vm);
 
+    allocator: Allocator,
     env: Environment,
     evm: [*c]evmc.evmc_vm,
     host: evmc.struct_evmc_host_interface,
 
     // init creates a new EVM VM instance. The caller must call deinit() when done.
-    pub fn init(env: Environment) VM {
+    pub fn init(allocator: Allocator, env: Environment) VM {
         var evm = evmc.evmc_create_evmone();
         vmlog.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
         return .{
+            .allocator = allocator,
             .env = env,
             .evm = evm,
             .host = evmc.struct_evmc_host_interface{
@@ -343,8 +345,9 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const address_key: AddressKey = .{ .address = address, .key = key.*.bytes };
-        if (vm.env.state.accessedStorageKeysContains(address_key))
+        if (vm.env.state.accessedStorageKeysContains(address_key)) {
             return evmc.EVMC_ACCESS_WARM;
+        }
         _ = vm.env.state.putAccessedStorageKeys(address_key) catch |err| switch (err) {
             error.OutOfMemory => @panic("OOO"),
         };
@@ -354,7 +357,7 @@ const EVMOneHost = struct {
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) });
+        evmclog.debug("call() kind={d} depth={d} sender={} recipient={} gas={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes), msg.*.gas });
 
         if (msg.*.depth > params.stack_depth_limit) {
             return .{
@@ -375,11 +378,11 @@ const EVMOneHost = struct {
         };
 
         const recipient_addr = fromEVMCAddress(msg.*.recipient);
+        const sender = fromEVMCAddress(msg.*.sender);
 
         // Send value.
         const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
         if (value > 0) {
-            const sender = fromEVMCAddress(msg.*.sender);
             const sender_balance = vm.env.state.getAccount(sender).balance;
             if (sender_balance < value) {
                 return .{
@@ -397,7 +400,7 @@ const EVMOneHost = struct {
                 error.OutOfMemory => @panic("OOO"),
             };
             const recipient_balance = vm.env.state.getAccount(recipient_addr).balance;
-            vm.env.state.setBalance(sender, recipient_balance + value) catch |err| switch (err) {
+            vm.env.state.setBalance(recipient_addr, recipient_balance + value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
         }
@@ -424,10 +427,33 @@ const EVMOneHost = struct {
 
         if (result.status_code == evmc.EVMC_SUCCESS) {
             if (msg.*.kind == evmc.EVMC_CREATE or msg.*.kind == evmc.EVMC_CREATE2) {
-                vm.env.state.setContractCode(recipient_addr, result.output_data[0..result.output_size]) catch |err| switch (err) {
+                const contract_code_gas = @as(i64, @intCast(result.output_size)) * params.gas_code_deposit;
+
+                if ((result.output_size > 0 and result.output_data == 0xEF) or result.output_size > params.max_code_size or contract_code_gas > result.gas_left) {
+                    result.release.?(&result);
+                    return .{
+                        .status_code = evmc.EVMC_FAILURE,
+                        .gas_left = 0,
+                        .gas_refund = 0,
+                        .output_data = null,
+                        .output_size = 0,
+                        .release = null,
+                        .create_address = std.mem.zeroes(evmc.struct_evmc_address),
+                        .padding = [_]u8{0} ** 4,
+                    };
+                }
+                result.gas_left -= contract_code_gas;
+
+                const sender_nonce: u64 = @intCast(vm.env.state.getAccount(sender).nonce);
+                const contract_address = common.computeContractAddress(vm.allocator, sender, sender_nonce) catch unreachable;
+                result.create_address = .{ .bytes = contract_address };
+                vm.env.state.incrementNonce(sender) catch unreachable;
+
+                vm.env.state.setContractCode(contract_address, result.output_data[0..result.output_size]) catch |err| switch (err) {
                     error.OutOfMemory => @panic("OOO"),
                     error.AccountAlreadyHasCode => @panic("account already has code"),
                 };
+                vm.env.state.incrementNonce(contract_address) catch unreachable;
             }
             // Free the backup and indireclty commit to the changes that happened.
             prev_statedb.deinit();
@@ -441,8 +467,7 @@ const EVMOneHost = struct {
             // If the *CALL failed, we restore the previous statedb.
             vm.env.state.* = prev_statedb;
         }
-
-        evmclog.debug("call() end depth={d} status_code={} gas_left={}", .{ msg.*.depth, result.status_code, result.gas_left });
+        evmclog.debug("call() end depth={d} status_code={} gas_left={} create_address={}", .{ msg.*.depth, result.status_code, result.gas_left, std.fmt.fmtSliceHexLower(&result.create_address.bytes) });
 
         return result;
     }

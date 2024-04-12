@@ -96,7 +96,7 @@ pub const FixtureTest = struct {
             var exp_account_state: AccountState = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
-                log.err("expected nonce {d} but got {d}", .{ exp_account_state.nonce, got_account_state.nonce });
+                log.err("{} expected nonce {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.nonce, got_account_state.nonce });
                 return error.PostStateNonceMismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
@@ -112,8 +112,10 @@ pub const FixtureTest = struct {
             var it_got = got_storage.iterator();
             while (it_got.next()) |storage_entry| {
                 const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
-                if (!std.mem.eql(u8, storage_entry.value_ptr, &val))
+                if (!std.mem.eql(u8, storage_entry.value_ptr, &val)) {
+                    log.err("expected storage slot value at {d}, got {s}, exp {s}", .{ storage_entry.key_ptr.*, std.fmt.fmtSliceHexLower(&storage_entry.value_ptr.*), std.fmt.fmtSliceHexLower(&val) });
                     return error.PostStateStorageValueMismatch;
+                }
             }
         }
 
@@ -202,7 +204,7 @@ test "execution-spec-tests" {
     while (try test_it.next()) |f| {
         if (f.kind == .directory) continue;
 
-        std.log.debug("##### Running test {s} #####", .{f.basename});
+        std.log.debug("##### Spec-test file {s} #####", .{f.basename});
         var file_content = try f.dir.readFileAlloc(allocator, f.basename, 1 << 30);
         defer allocator.free(file_content);
 
@@ -211,6 +213,7 @@ test "execution-spec-tests" {
 
         var it = ft.tests.value.map.iterator();
         while (it.next()) |entry| {
+            std.log.debug("-> Spec-test file {s}", .{entry.key_ptr.*});
             try std.testing.expect(try entry.value_ptr.run(allocator));
         }
     }

@@ -5,6 +5,7 @@ const Address = types.Address;
 pub const gas_limit_adjustement_factor = 1024;
 pub const gas_limit_minimum = 5000;
 pub const gas_init_code_word_const = 2;
+pub const gas_code_deposit: i64 = 200;
 
 pub const tx_base_cost = 21000;
 pub const tx_data_cost_per_zero = 4;

@@ -306,7 +306,7 @@ pub const Blockchain = struct {
             gas,
             env,
         );
-        const output = try processMessageCall(message, env);
+        const output = try processMessageCall(allocator, message, env);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
@@ -401,7 +401,7 @@ pub const Blockchain = struct {
             code = env.state.getAccount(targ).code;
             code_address = targ;
         } else {
-            current_target = try computeContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
+            current_target = try common.computeContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
             msg_data = &[_]u8{0};
             code = data;
         }
@@ -424,22 +424,8 @@ pub const Blockchain = struct {
         };
     }
 
-    fn computeContractAddress(allocator: Allocator, address: Address, nonce: u64) !Address {
-        var out = std.ArrayList(u8).init(allocator);
-        defer out.deinit();
-        try rlp.serialize(struct { addr: Address, nonce: u64 }, allocator, .{ .addr = address, .nonce = nonce }, &out);
-
-        var computed_address: [Keccak256.digest_length]u8 = undefined;
-        Keccak256.hash(out.items, &computed_address, .{});
-
-        var padded_address: Address = std.mem.zeroes(Address);
-        @memcpy(&padded_address, computed_address[12..]);
-
-        return padded_address;
-    }
-
-    fn processMessageCall(message: Message, env: Environment) !vm.MessageCallOutput {
-        var vm_instance = VM.init(env);
+    fn processMessageCall(allocator: Allocator, message: Message, env: Environment) !vm.MessageCallOutput {
+        var vm_instance = VM.init(allocator, env);
         defer vm_instance.deinit();
 
         return try vm_instance.processMessageCall(message);

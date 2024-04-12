@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../types/types.zig");
 const hexutils = @import("hexutils.zig");
 const rlp = @import("rlp.zig");
+const contract = @import("contract.zig");
 
 // Hex
 pub const prefixedhex2hash = hexutils.prefixedhex2hash;
@@ -18,3 +19,6 @@ pub const AddressKeySet = std.AutoHashMap(AddressKey, void);
 // RLP
 pub const decodeRLP = rlp.decodeRLP;
 pub const decodeRLPAndHash = rlp.decodeRLPAndHash;
+
+// Address
+pub const computeContractAddress = contract.computeContractAddress;

@@ -37,7 +37,7 @@ test "create contract" {
         .chain_id = ChainID.SpecTest,
     };
 
-    var vmi = vm.VM.init(env);
+    var vmi = vm.VM.init(allocator, env);
     defer vmi.deinit();
 
     // Create contract.
