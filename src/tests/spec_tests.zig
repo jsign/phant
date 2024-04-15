@@ -45,11 +45,8 @@ pub const FixtureTest = struct {
     },
     network: []const u8,
     genesisRLP: HexString,
-    genesisBlockHeader: BlockHeaderHex,
     blocks: []const struct {
         rlp: []const u8,
-        blockHeader: BlockHeaderHex,
-        transactions: []TransactionHex,
     },
     lastblockhash: HexString,
     pre: ChainState,
@@ -124,41 +121,6 @@ pub const FixtureTest = struct {
 };
 
 pub const ChainState = std.json.ArrayHashMap(AccountStateHex);
-
-pub const BlockHeaderHex = struct {
-    parentHash: HexString,
-    uncleHash: HexString,
-    coinbase: HexString,
-    stateRoot: HexString,
-    transactionsTrie: HexString,
-    receiptTrie: HexString,
-    bloom: HexString,
-    difficulty: HexString,
-    number: HexString,
-    gasLimit: HexString,
-    gasUsed: HexString,
-    timestamp: HexString,
-    extraData: HexString,
-    mixHash: HexString,
-    nonce: HexString,
-    baseFeePerGas: HexString,
-    hash: HexString,
-};
-
-pub const TransactionHex = struct {
-    type: HexString,
-    chainId: HexString,
-    nonce: HexString,
-    gasPrice: HexString,
-    gasLimit: HexString,
-    to: HexString,
-    value: HexString,
-    data: HexString,
-    v: HexString,
-    r: HexString,
-    s: HexString,
-    sender: HexString,
-};
 
 pub const AccountStateHex = struct {
     nonce: HexString,
