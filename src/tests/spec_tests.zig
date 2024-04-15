@@ -47,6 +47,7 @@ pub const FixtureTest = struct {
     genesisRLP: HexString,
     blocks: []const struct {
         rlp: []const u8,
+        expectException: ?[]const u8 = null,
     },
     lastblockhash: HexString,
     pre: ChainState,
@@ -84,7 +85,17 @@ pub const FixtureTest = struct {
             out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
             const block = try Block.decode(allocator, rlp_bytes);
-            try chain.runBlock(block);
+
+            const block_should_fail = if (encoded_block.expectException) |_| true else false;
+            if (chain.runBlock(block)) |_| {
+                if (block_should_fail) {
+                    return error.BlockExecutionValidityExpectationMismatch;
+                }
+            } else |_| {
+                if (!block_should_fail) {
+                    return error.BlockExecutionValidityExpectationMismatch;
+                }
+            }
         }
 
         // Verify that the post state matches what the fixture `postState` claims is true.
