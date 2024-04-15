@@ -376,7 +376,7 @@ pub const Blockchain = struct {
     }
 
     fn initCodeCost(code_length: usize) u64 {
-        return params.gas_init_code_word_const * (code_length + 31) / 32;
+        return params.gas_init_code_word_const * ((code_length + 31) / 32);
     }
 
     // prepareMessage prepares an EVM message.
