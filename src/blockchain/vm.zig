@@ -444,11 +444,17 @@ const EVMOneHost = struct {
                 }
                 result.gas_left -= contract_code_gas;
 
+                // Increment the nonce of the sender.
                 const sender_nonce: u64 = @intCast(vm.env.state.getAccount(sender).nonce);
-                const contract_address = common.computeContractAddress(vm.allocator, sender, sender_nonce) catch unreachable;
+                const contract_address = if (msg.*.kind == evmc.EVMC_CREATE)
+                    common.computeCREATEContractAddress(vm.allocator, sender, sender_nonce) catch unreachable
+                else
+                    common.computeCREATE2ContractAddress(sender, msg.*.create2_salt.bytes, code) catch unreachable;
+
                 result.create_address = .{ .bytes = contract_address };
                 vm.env.state.incrementNonce(sender) catch unreachable;
 
+                // Save new contract code and set nonce to 1.
                 const contract_code = if (result.output_size == 0) &[_]u8{} else result.output_data[0..result.output_size];
                 vm.env.state.setContractCode(contract_address, contract_code) catch |err| switch (err) {
                     error.OutOfMemory => @panic("OOO"),

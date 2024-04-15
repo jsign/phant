@@ -401,7 +401,7 @@ pub const Blockchain = struct {
             code = env.state.getAccount(targ).code;
             code_address = targ;
         } else {
-            current_target = try common.computeContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
+            current_target = try common.computeCREATEContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
             msg_data = &[_]u8{0};
             code = data;
         }

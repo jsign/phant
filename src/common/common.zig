@@ -21,4 +21,5 @@ pub const decodeRLP = rlp.decodeRLP;
 pub const decodeRLPAndHash = rlp.decodeRLPAndHash;
 
 // Address
-pub const computeContractAddress = contract.computeContractAddress;
+pub const computeCREATEContractAddress = contract.computeCREATEContractAddress;
+pub const computeCREATE2ContractAddress = contract.computeCREATE2ContractAddress;

@@ -113,7 +113,7 @@ pub const FixtureTest = struct {
             while (it_got.next()) |storage_entry| {
                 const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
                 if (!std.mem.eql(u8, storage_entry.value_ptr, &val)) {
-                    log.err("expected storage slot value at {d}, got {s}, exp {s}", .{ storage_entry.key_ptr.*, std.fmt.fmtSliceHexLower(&storage_entry.value_ptr.*), std.fmt.fmtSliceHexLower(&val) });
+                    log.err("{} expected storage slot value at {d}, got {s}, exp {s}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), storage_entry.key_ptr.*, std.fmt.fmtSliceHexLower(&storage_entry.value_ptr.*), std.fmt.fmtSliceHexLower(&val) });
                     return error.PostStateStorageValueMismatch;
                 }
             }
