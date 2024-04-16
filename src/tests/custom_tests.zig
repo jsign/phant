@@ -74,7 +74,7 @@ test "create contract" {
         // Check the contract creation execution was successful.
         try std.testing.expect(out.success);
 
-        break :blk msg.current_target;
+        break :blk try common.computeCREATEContractAddress(allocator, coinbase, 1);
     };
 
     // Run it.

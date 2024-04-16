@@ -279,7 +279,6 @@ pub const Blockchain = struct {
 
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
         const effective_gas_fee = tx.getGasLimit() * env.gas_price;
-        try env.state.incrementNonce(sender);
 
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
         try env.state.setBalance(sender, sender_balance_after_gas_fee);
@@ -383,7 +382,7 @@ pub const Blockchain = struct {
     // The caller must call deinit() on the returned Message.
     pub fn prepareMessage(
         allocator: Allocator,
-        caller: Address,
+        sender: Address,
         target: ?Address,
         value: u256,
         data: []const u8,
@@ -391,36 +390,29 @@ pub const Blockchain = struct {
         env: Environment,
     ) !Message {
         var current_target: Address = undefined;
-        var code_address: Address = undefined;
         var msg_data: []const u8 = undefined;
-        var code: []const u8 = undefined;
 
         if (target) |targ| {
             current_target = targ;
             msg_data = data;
-            code = env.state.getAccount(targ).code;
-            code_address = targ;
         } else {
-            current_target = try common.computeCREATEContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
-            msg_data = &[_]u8{0};
-            code = data;
+            // TODO: fix this (remove current_target...)
+            current_target = try common.computeCREATEContractAddress(allocator, sender, env.state.getAccount(sender).nonce);
+            msg_data = data;
         }
 
         try env.state.putAccessedAccount(current_target);
-        try env.state.putAccessedAccount(caller);
+        try env.state.putAccessedAccount(sender);
         for (params.precompiled_contract_addresses) |precompile_addr| {
             try env.state.putAccessedAccount(precompile_addr);
         }
 
         return .{
-            .caller = caller,
+            .sender = sender,
             .target = target,
-            .current_target = current_target,
             .gas = gas,
             .value = value,
             .data = msg_data,
-            .code_address = code_address,
-            .code = code,
         };
     }
 

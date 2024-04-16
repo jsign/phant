@@ -24,12 +24,9 @@ pub const Environment = struct {
 };
 
 pub const Message = struct {
-    caller: Address,
+    sender: Address,
     target: ?Address,
-    current_target: Address,
     gas: u64,
     value: u256,
     data: []const u8,
-    code_address: ?Address,
-    code: []const u8,
 };
