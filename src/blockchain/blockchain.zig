@@ -58,6 +58,7 @@ pub const Blockchain = struct {
     }
 
     pub fn runBlock(self: *Blockchain, block: Block) !void {
+        std.debug.print("Running block: {}\n", .{block.header.block_number});
         try validateBlockHeader(self.allocator, self.prev_block, block.header);
         if (block.uncles.len != 0)
             return error.NotEmptyUncles;
