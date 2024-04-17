@@ -194,6 +194,7 @@ pub const Blockchain = struct {
 
         for (block.withdrawals) |w| {
             const newBalance = state.getAccount(w.address).balance + (w.amount * std.math.pow(u256, 10, 9));
+            std.debug.print("new balanzz {s} -> {}\n", .{ std.fmt.fmtSliceHexLower(&w.address), newBalance });
             try state.setBalance(w.address, newBalance);
         }
 

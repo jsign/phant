@@ -108,7 +108,7 @@ pub const FixtureTest = struct {
                 return error.PostStateNonceMismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
-                log.err("expected balance {d} but got {d}", .{ exp_account_state.balance, got_account_state.balance });
+                log.err("{} expected balance {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.balance, got_account_state.balance });
                 return error.PostStateBalanceMismatch;
             }
 
