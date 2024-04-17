@@ -433,6 +433,10 @@ const EVMOneHost = struct {
             };
         }
 
+        vm.env.state.putAccessedAccount(recipient) catch |err| switch (err) {
+            error.OutOfMemory => @panic("OOO"),
+        };
+
         if (msg.kind == evmc.EVMC_CREATE or msg.kind == evmc.EVMC_CREATE2) {
             // Increment the nonce of the contract creator.
             vm.env.state.incrementNonce(sender) catch unreachable;

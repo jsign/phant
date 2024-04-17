@@ -296,15 +296,19 @@ pub const Blockchain = struct {
             },
         }
 
-        var message = try prepareMessage(
-            allocator,
-            sender,
-            tx.getTo(),
-            tx.getValue(),
-            tx.getData(),
-            gas,
-            env,
-        );
+        // EIP-2929
+        try env.state.putAccessedAccount(sender);
+        for (params.precompiled_contract_addresses) |precompile_addr| {
+            try env.state.putAccessedAccount(precompile_addr);
+        }
+
+        var message: Message = .{
+            .sender = sender,
+            .target = tx.getTo(),
+            .gas = gas,
+            .value = tx.getValue(),
+            .data = tx.getData(),
+        };
         const output = try processMessageCall(allocator, message, env);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
@@ -376,44 +380,6 @@ pub const Blockchain = struct {
 
     fn initCodeCost(code_length: usize) u64 {
         return params.gas_init_code_word_const * ((code_length + 31) / 32);
-    }
-
-    // prepareMessage prepares an EVM message.
-    // The caller must call deinit() on the returned Message.
-    pub fn prepareMessage(
-        allocator: Allocator,
-        sender: Address,
-        target: ?Address,
-        value: u256,
-        data: []const u8,
-        gas: u64,
-        env: Environment,
-    ) !Message {
-        var current_target: Address = undefined;
-        var msg_data: []const u8 = undefined;
-
-        if (target) |targ| {
-            current_target = targ;
-            msg_data = data;
-        } else {
-            // TODO: fix this (remove current_target...)
-            current_target = try common.computeCREATEContractAddress(allocator, sender, env.state.getAccount(sender).nonce);
-            msg_data = data;
-        }
-
-        try env.state.putAccessedAccount(current_target);
-        try env.state.putAccessedAccount(sender);
-        for (params.precompiled_contract_addresses) |precompile_addr| {
-            try env.state.putAccessedAccount(precompile_addr);
-        }
-
-        return .{
-            .sender = sender,
-            .target = target,
-            .gas = gas,
-            .value = value,
-            .data = msg_data,
-        };
     }
 
     fn processMessageCall(allocator: Allocator, message: Message, env: Environment) !vm.MessageCallOutput {

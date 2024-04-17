@@ -157,7 +157,7 @@ pub const StateDB = struct {
     }
 
     pub fn putAccessedAccount(self: *StateDB, addr: Address) !void {
-        try self.accessed_accounts.putNoClobber(addr, {});
+        try self.accessed_accounts.put(addr, {});
     }
 
     pub fn accessedStorageKeysContains(self: *StateDB, addrkey: AddressKey) bool {
