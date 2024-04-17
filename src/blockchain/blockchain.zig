@@ -211,7 +211,7 @@ pub const Blockchain = struct {
         defer arena.free(keyvals);
 
         var i: usize = 0;
-        while (i + 1 < items.len and i != 0x80) : (i += 1) {
+        while (i + 1 < items.len and i + 1 != 0x80) : (i += 1) {
             const encoded_item = try items[i + 1].encode(arena);
             keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{@as(u8, @intCast(i + 1))}, encoded_item);
         }
