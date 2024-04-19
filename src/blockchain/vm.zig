@@ -88,8 +88,6 @@ pub const VM = struct {
 
             break :blk evmc_message;
         } else blk: {
-            const code = msg.data;
-            _ = code;
             break :blk evmc.struct_evmc_message{
                 .kind = evmc.EVMC_CREATE,
                 .flags = 0,
@@ -376,9 +374,8 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const address_key: AddressKey = .{ .address = address, .key = key.*.bytes };
-        if (vm.env.state.accessedStorageKeysContains(address_key)) {
+        if (vm.env.state.accessedStorageKeysContains(address_key))
             return evmc.EVMC_ACCESS_WARM;
-        }
         _ = vm.env.state.putAccessedStorageKeys(address_key) catch |err| switch (err) {
             error.OutOfMemory => @panic("OOO"),
         };
