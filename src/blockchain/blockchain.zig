@@ -30,7 +30,7 @@ const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 pub const Blockchain = struct {
     allocator: Allocator,
-    chain_id: config.ChainId,
+    chain_id: config.NetworkID,
     state: *StateDB,
     prev_block: BlockHeader,
     last_256_blocks_hashes: [256]Hash32, // ordered in asc order
@@ -40,7 +40,7 @@ pub const Blockchain = struct {
     // The caller **does not** transfer ownership of prev_block.
     pub fn init(
         allocator: Allocator,
-        chain_id: config.ChainId,
+        chain_id: config.NetworkID,
         state: *StateDB,
         prev_block: BlockHeader,
         last_256_blocks_hashes: [256]Hash32,
