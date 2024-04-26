@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const mod_httpz = httpz.module("httpz");
-    const zigcli_dep = b.dependency("zig-cli", .{ .target = target });
+    const zigcli_dep = b.dependency("zig-cli", .{ .target = target, .optimize = optimize });
     const zigcli_mod = zigcli_dep.module("zig-cli");
 
     const ethash = b.addStaticLibrary(.{
