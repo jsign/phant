@@ -1,12 +1,12 @@
 const std = @import("std");
-const types = @import("../types/types.zig");
+const lib = @import("../lib.zig");
 const common = @import("../common/common.zig");
 const blocks = @import("../types/block.zig");
 const config = @import("../config/config.zig");
 const transaction = @import("../types/transaction.zig");
 const vm = @import("vm.zig");
 const rlp = @import("zig-rlp");
-const signer = @import("../signer/signer.zig");
+const signer = lib.signer;
 const params = @import("params.zig");
 const blockchain_types = @import("types.zig");
 const mpt = @import("../mpt/mpt.zig");
@@ -14,18 +14,18 @@ const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
 const AddresssKey = common.AddressKey;
 const AddressKeySet = common.AddressKeySet;
-const LogsBloom = types.LogsBloom;
-const Block = types.Block;
-const Tx = types.Tx;
-const BlockHeader = types.BlockHeader;
+const LogsBloom = lib.types.LogsBloom;
+const Block = lib.types.Block;
+const Tx = lib.types.Tx;
+const BlockHeader = lib.types.BlockHeader;
 const Environment = blockchain_types.Environment;
 const Message = blockchain_types.Message;
-const StateDB = @import("../state/state.zig").StateDB;
-const Hash32 = types.Hash32;
-const Bytes32 = types.Bytes32;
-const Address = types.Address;
-const Receipt = types.Receipt;
-const Log = types.Log;
+const StateDB = lib.state.StateDB;
+const Hash32 = lib.types.Hash32;
+const Bytes32 = lib.types.Bytes32;
+const Address = lib.types.Address;
+const Receipt = lib.types.Receipt;
+const Log = lib.types.Log;
 const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
@@ -106,7 +106,7 @@ pub const Blockchain = struct {
 
         // Check base fee.
         const parent_gas_target = prev_block.gas_limit / params.elasticity_multiplier;
-        var expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
+        const expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
             prev_block.base_fee_per_gas
         else if (prev_block.gas_used > parent_gas_target) blk: {
             const gas_used_delta = prev_block.gas_used - parent_gas_target;
@@ -219,7 +219,7 @@ pub const Blockchain = struct {
         }
 
         if (items.len > 0) {
-            var encoded_item = try items[0].encode(arena);
+            const encoded_item = try items[0].encode(arena);
             keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, encoded_item);
             i += 1;
         }
@@ -302,7 +302,7 @@ pub const Blockchain = struct {
             try env.state.putAccessedAccount(precompile_addr);
         }
 
-        var message: Message = .{
+        const message: Message = .{
             .sender = sender,
             .target = tx.getTo(),
             .gas = gas,
@@ -366,7 +366,7 @@ pub const Blockchain = struct {
         const access_list_cost = switch (tx) {
             .LegacyTx => 0,
             inline else => |al_tx| blk: {
-                var sum: u64 = 0;
+                const sum: u64 = 0;
                 for (al_tx.access_list) |al| {
                     data_cost += params.tx_access_list_address_cost;
                     data_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;

@@ -34,6 +34,6 @@ pub const precompiled_contract_addresses = [_]Address{
 
 fn addressFromInt(comptime i: u160) Address {
     var addr: Address = undefined;
-    std.mem.writeInt(u160, &addr, i, .Big);
+    std.mem.writeInt(u160, &addr, i, .big);
     return addr;
 }

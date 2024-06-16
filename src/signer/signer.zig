@@ -28,8 +28,8 @@ pub const TxSigner = struct {
         const tx_hash = try self.hashTx(allocator, tx);
 
         const ecdsa_sig = try self.ecdsa_signer.sign(tx_hash, privkey);
-        const r = std.mem.readIntSlice(u256, ecdsa_sig[0..32], std.builtin.Endian.Big);
-        const s = std.mem.readIntSlice(u256, ecdsa_sig[32..64], std.builtin.Endian.Big);
+        const r = std.mem.readInt(u256, ecdsa_sig[0..32], std.builtin.Endian.big);
+        const s = std.mem.readInt(u256, ecdsa_sig[32..64], std.builtin.Endian.big);
         const v = switch (tx) {
             Tx.LegacyTx => 35 + 2 * self.chain_id, // We sign using EIP155 since 2016.
             Tx.AccessListTx, Tx.FeeMarketTx => 0,
@@ -46,8 +46,8 @@ pub const TxSigner = struct {
             Tx.LegacyTx => |itx| blk: {
                 try ecdsa.validateSignatureFields(itx.r, itx.s);
 
-                std.mem.writeIntSlice(u256, sig[0..32], itx.r, std.builtin.Endian.Big);
-                std.mem.writeIntSlice(u256, sig[32..64], itx.s, std.builtin.Endian.Big);
+                std.mem.writeInt(u256, sig[0..32], itx.r, std.builtin.Endian.big);
+                std.mem.writeInt(u256, sig[32..64], itx.s, std.builtin.Endian.big);
 
                 if (itx.v == 27 or itx.v == 28) {
                     break :blk @intCast(itx.v - 27);
@@ -61,15 +61,15 @@ pub const TxSigner = struct {
             Tx.AccessListTx => |itx| blk: {
                 try ecdsa.validateSignatureFields(itx.r, itx.s);
 
-                std.mem.writeIntSlice(u256, sig[0..32], itx.r, std.builtin.Endian.Big);
-                std.mem.writeIntSlice(u256, sig[32..64], itx.s, std.builtin.Endian.Big);
+                std.mem.writeInt(u256, sig[0..32], itx.r, std.builtin.Endian.big);
+                std.mem.writeInt(u256, sig[32..64], itx.s, std.builtin.Endian.big);
                 break :blk @intCast(itx.y_parity);
             },
             Tx.FeeMarketTx => |itx| blk: {
                 try ecdsa.validateSignatureFields(itx.r, itx.s);
 
-                std.mem.writeIntSlice(u256, sig[0..32], itx.r, std.builtin.Endian.Big);
-                std.mem.writeIntSlice(u256, sig[32..64], itx.s, std.builtin.Endian.Big);
+                std.mem.writeInt(u256, sig[0..32], itx.r, std.builtin.Endian.big);
+                std.mem.writeInt(u256, sig[32..64], itx.s, std.builtin.Endian.big);
                 break :blk @intCast(itx.y_parity);
             },
         };

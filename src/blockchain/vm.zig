@@ -31,7 +31,7 @@ pub const VM = struct {
 
     // init creates a new EVM VM instance. The caller must call deinit() when done.
     pub fn init(allocator: Allocator, env: Environment) VM {
-        var evm = evmc.evmc_create_evmone();
+        const evm = evmc.evmc_create_evmone();
         vmlog.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
         return .{
             .allocator = allocator,
@@ -77,7 +77,7 @@ pub const VM = struct {
                 .input_size = msg.data.len,
                 .value = blk2: {
                     var tx_value: [32]u8 = undefined;
-                    std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
+                    std.mem.writeInt(u256, &tx_value, msg.value, .big);
                     break :blk2 .{ .bytes = tx_value };
                 },
                 .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
@@ -104,7 +104,7 @@ pub const VM = struct {
                 .input_size = msg.data.len,
                 .value = blk2: {
                     var tx_value: [32]u8 = undefined;
-                    std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
+                    std.mem.writeInt(u256, &tx_value, msg.value, .big);
                     break :blk2 .{ .bytes = tx_value };
                 },
                 .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
@@ -176,7 +176,7 @@ const EVMOneHost = struct {
         evmclog.debug("getStorage addr=0x{} key={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes) });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
+        const k = std.mem.readInt(u256, &key.*.bytes, std.builtin.Endian.big);
 
         return .{ .bytes = vm.env.state.getStorage(address, k) };
     }
@@ -192,7 +192,7 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
-        const k = std.mem.readIntSlice(u256, &key.*.bytes, std.builtin.Endian.Big);
+        const k = std.mem.readInt(u256, &key.*.bytes, std.builtin.Endian.big);
         const storage_status: evmc.enum_evmc_storage_status = blk: {
             const original_value = vm.env.state.getOriginalStorage(address, k);
             const current_value = vm.env.state.getStorage(address, k);
@@ -445,7 +445,7 @@ const EVMOneHost = struct {
         };
 
         // Send value.
-        const value = std.mem.readInt(u256, &msg.value.bytes, std.builtin.Endian.Big);
+        const value = std.mem.readInt(u256, &msg.value.bytes, std.builtin.Endian.big);
         if (value > 0) {
             const sender_balance = vm.env.state.getAccount(sender).balance;
             if (sender_balance < value) {
@@ -555,7 +555,7 @@ fn toEVMCUint256Be(num: u256) evmc.evmc_uint256be {
     return .{
         .bytes = blk: {
             var ret: [32]u8 = undefined;
-            std.mem.writeIntSliceBig(u256, &ret, num);
+            std.mem.writeInt(u256, &ret, num, std.builtin.Endian.big);
             break :blk ret;
         },
     };

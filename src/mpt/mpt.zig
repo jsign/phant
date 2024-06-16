@@ -82,7 +82,7 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
         // one nibble. This means we need to insert an ExtensionNode.
         if (start == 0 and end == list.len) {
             var head = list[0];
-            var tail = list[1..];
+            const tail = list[1..];
             // Detect the longest common prefix of all elements in list.
             var prefix_index: usize = level + 1;
             Loop: while (true) {
@@ -101,7 +101,7 @@ fn insertNode(allocator: Allocator, list: []const KeyVal, level: usize) !Node {
 
             var next = try insertNode(allocator, list, prefix_index);
             const node_rlp = try next.encodeRLP(allocator);
-            var rlp_value: GenericRLPValue = if (node_rlp.len < 32) try next.getRLPValue(allocator) else .{ .value = try next.hash(allocator) };
+            const rlp_value: GenericRLPValue = if (node_rlp.len < 32) try next.getRLPValue(allocator) else .{ .value = try next.hash(allocator) };
             return .{ .extension_node = ExtensionNode.init(head.nibbles[level..prefix_index], rlp_value) };
         }
 
@@ -201,9 +201,9 @@ const ExtensionNode = struct {
     }
 
     pub fn hash(self: ExtensionNode, allocator: Allocator) !*Hash32 {
-        var rlp_encoded = try self.encodeRLP(allocator);
+        const rlp_encoded = try self.encodeRLP(allocator);
 
-        var hsh = try allocator.create(Hash32);
+        const hsh = try allocator.create(Hash32);
         @memcpy(hsh, &hasher.keccak256(rlp_encoded));
         return hsh;
     }
@@ -239,9 +239,9 @@ const BranchNode = struct {
     }
 
     pub fn hash(self: BranchNode, allocator: Allocator) !*Hash32 {
-        var rlp_encoded = try self.encodeRLP(allocator);
+        const rlp_encoded = try self.encodeRLP(allocator);
 
-        var hsh = try allocator.create(Hash32);
+        const hsh = try allocator.create(Hash32);
         @memcpy(hsh, &hasher.keccak256(rlp_encoded));
         return hsh;
     }
@@ -271,9 +271,9 @@ const LeafNode = struct {
     }
 
     pub fn hash(self: LeafNode, allocator: Allocator) !*Hash32 {
-        var rlp_value = try self.encodeRLP(allocator);
+        const rlp_value = try self.encodeRLP(allocator);
 
-        var hsh = try allocator.create(Hash32);
+        const hsh = try allocator.create(Hash32);
         @memcpy(hsh, &hasher.keccak256(rlp_value));
 
         return hsh;
@@ -316,7 +316,7 @@ fn encodeNibbles(comptime is_leaf_node: bool, allocator: Allocator, nibbles: []c
 test "correctness" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var allocator = arena.allocator();
+    const allocator = arena.allocator();
 
     const TestCase = struct {
         name: []const u8,

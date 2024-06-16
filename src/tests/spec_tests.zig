@@ -4,10 +4,10 @@ const config = @import("../config/config.zig");
 const types = @import("../types/types.zig");
 const blockchain = @import("../blockchain/blockchain.zig");
 const vm = @import("../blockchain/vm.zig");
-const ecdsa = @import("../crypto/crypto.zig").ecdsa;
-const state = @import("../state/state.zig");
-const common = @import("../common/common.zig");
-const TxSigner = @import("../signer/signer.zig").TxSigner;
+const lib = @import("../lib.zig");
+const ecdsa = lib.crypto.ecdsa;
+const state = lib.state;
+const TxSigner = lib.signer.TxSigner;
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
 const Block = types.Block;
@@ -61,7 +61,7 @@ pub const FixtureTest = struct {
 
         // We parse the account state "prestate" from the test, and create our
         // statedb with this initial state of accounts.
-        var accounts_state = blk: {
+        const accounts_state = blk: {
             var accounts_state = try allocator.alloc(AccountState, self.pre.map.count());
             var it = self.pre.map.iterator();
             var i: usize = 0;
@@ -143,7 +143,7 @@ pub const AccountStateHex = struct {
         const nonce = try std.fmt.parseInt(u64, self.nonce[2..], 16);
         const balance = try std.fmt.parseInt(u256, self.balance[2..], 16);
 
-        var code = try allocator.alloc(u8, self.code[2..].len / 2);
+        const code = try allocator.alloc(u8, self.code[2..].len / 2);
         _ = try std.fmt.hexToBytes(code, self.code[2..]);
 
         var addr: Address = undefined;
@@ -156,7 +156,7 @@ pub const AccountStateHex = struct {
             const key = try std.fmt.parseUnsigned(u256, entry.key_ptr.*[2..], 16);
             const value = try std.fmt.parseUnsigned(u256, entry.value_ptr.*[2..], 16);
             var value_bytes: Bytes32 = undefined;
-            std.mem.writeInt(u256, &value_bytes, value, .Big);
+            std.mem.writeInt(u256, &value_bytes, value, .big);
             try account.storage.putNoClobber(key, value_bytes);
         }
 
@@ -167,9 +167,9 @@ pub const AccountStateHex = struct {
 const AccountStorageHex = std.json.ArrayHashMap(HexString);
 
 test "execution-spec-tests" {
-    var allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
-    var test_folder = try std.fs.cwd().openIterableDir("src/tests/fixtures", .{});
+    var test_folder = try std.fs.cwd().openDir("src/tests/fixtures", .{ .iterate = true });
     defer test_folder.close();
 
     var test_it = try test_folder.walk(allocator);
@@ -178,7 +178,7 @@ test "execution-spec-tests" {
         if (f.kind == .directory) continue;
 
         std.log.debug("##### Spec-test file {s} #####", .{f.basename});
-        var file_content = try f.dir.readFileAlloc(allocator, f.basename, 1 << 30);
+        const file_content = try f.dir.readFileAlloc(allocator, f.basename, 1 << 30);
         defer allocator.free(file_content);
 
         var ft = try Fixture.fromBytes(allocator, file_content);

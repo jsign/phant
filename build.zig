@@ -1,4 +1,4 @@
-const std = @import("std");
+pub const std = @import("std");
 const LazyPath = std.Build.LazyPath;
 
 // Although this function looks imperative, note that its job is to
@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize }).module("rlp");
+    const dep_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize });
     const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
     const httpz = b.dependency("httpz", .{
@@ -37,10 +37,11 @@ pub fn build(b: *std.Build) void {
         "-Wsign-conversion",           "-Wno-unknown-pragmas",   "-fno-stack-protector",
         "-Wimplicit-fallthrough",      "-Wmissing-declarations", "-Wno-attributes",
         "-Wextra-semi",                "-fno-exceptions",        "-fno-rtti",
+        "-Wno-deprecated", // this one is used to remove a warning about char_trait deprecation
         "-Wno-strict-prototypes", // this one is used by glue.c to avoid a warning that does not disappear when the prototype is added.
     };
-    ethash.addCSourceFiles(&[_][]const u8{"ethash/lib/keccak/keccak.c"}, &cflags);
-    ethash.addIncludePath(LazyPath{ .path = "ethash/include" });
+    ethash.addCSourceFiles(.{ .root = b.path(""), .files = &[_][]const u8{"ethash/lib/keccak/keccak.c"}, .flags = &cflags });
+    ethash.addIncludePath(b.path("ethash/include"));
     ethash.linkLibC();
     ethash.linkLibCpp();
     b.installArtifact(ethash);
@@ -58,8 +59,9 @@ pub fn build(b: *std.Build) void {
         "-fno-stack-protector", "-Wimplicit-fallthrough",      "-Wmissing-declarations",
         "-Wno-attributes",      "-Wextra-semi",                "-fno-exceptions",
         "-fno-rtti",
+        "-Wno-deprecated", // this one is used to remove a warning about char_trait deprecation
     };
-    evmone.addCSourceFiles(&[_][]const u8{
+    evmone.addCSourceFiles(.{ .root = b.path(""), .files = &[_][]const u8{
         "evmone/lib/evmone/advanced_analysis.cpp",
         "evmone/lib/evmone/eof.cpp",
         "evmone/lib/evmone/advanced_execution.cpp",
@@ -70,12 +72,12 @@ pub fn build(b: *std.Build) void {
         "evmone/lib/evmone/tracing.cpp",
         "evmone/lib/evmone/baseline_instruction_table.cpp",
         "evmone/lib/evmone/vm.cpp",
-    }, &cppflags);
+    }, .flags = &cppflags });
 
-    evmone.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
-    evmone.addIncludePath(LazyPath{ .path = "evmone/include" });
-    evmone.addIncludePath(LazyPath{ .path = "intx/include" });
-    evmone.addIncludePath(LazyPath{ .path = "ethash/include" });
+    evmone.addIncludePath(b.path("evmone/evmc/include"));
+    evmone.addIncludePath(b.path("evmone/include"));
+    evmone.addIncludePath(b.path("intx/include"));
+    evmone.addIncludePath(b.path("ethash/include"));
     evmone.defineCMacro("PROJECT_VERSION", "\"0.11.0-dev\"");
     evmone.linkLibC();
     evmone.linkLibCpp();
@@ -85,27 +87,27 @@ pub fn build(b: *std.Build) void {
         .name = "phant",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
-    exe.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
-    if (target.getCpuArch() == .x86_64) {
+    exe.addIncludePath(b.path("evmone/include/evmone"));
+    exe.addIncludePath(b.path("evmone/evmc/include"));
+    if (target.result.cpu.arch == .x86_64) {
         // On x86_64, some functions are missing from the static library,
         // so we define dummy functions to make sure that it compiles.
         exe.addCSourceFile(.{
-            .file = .{ .path = "src/glue.c" },
+            .file = b.path("src/glue.c"),
             .flags = &cflags,
         });
     }
     exe.linkLibrary(ethash);
     exe.linkLibrary(evmone);
     exe.linkLibC();
-    exe.addModule("zig-rlp", mod_rlp);
+    exe.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
-    exe.addModule("zig-eth-secp256k1", mod_secp256k1);
-    exe.addModule("httpz", mod_httpz);
+    exe.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
+    exe.root_module.addImport("httpz", mod_httpz);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -138,26 +140,26 @@ pub fn build(b: *std.Build) void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
     });
-    unit_tests.addIncludePath(LazyPath{ .path = "evmone/include/evmone" });
-    unit_tests.addIncludePath(LazyPath{ .path = "evmone/evmc/include" });
-    if (target.getCpuArch() == .x86_64) {
+    unit_tests.addIncludePath(b.path("evmone/include/evmone"));
+    unit_tests.addIncludePath(b.path("evmone/evmc/include"));
+    if (target.result.cpu.arch == .x86_64) {
         // On x86_64, some functions are missing from the static library,
         // so we define dummy functions to make sure that it compiles.
         unit_tests.addCSourceFile(.{
-            .file = .{ .path = "src/glue.c" },
+            .file = b.path("src/glue.c"),
             .flags = &cflags,
         });
     }
     unit_tests.linkLibrary(ethash);
     unit_tests.linkLibrary(evmone);
     unit_tests.linkLibC();
-    unit_tests.addModule("zig-rlp", mod_rlp);
+    unit_tests.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
-    unit_tests.addModule("zig-eth-secp256k1", mod_secp256k1);
+    unit_tests.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;

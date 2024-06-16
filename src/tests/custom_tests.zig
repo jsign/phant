@@ -2,12 +2,13 @@ const std = @import("std");
 const config = @import("../config/config.zig");
 const common = @import("../common/common.zig");
 const vm = @import("../blockchain/vm.zig");
-const state = @import("../state/state.zig");
+const lib = @import("../lib.zig");
+const state = lib.state;
 const blockchain = @import("../blockchain/blockchain.zig");
 const blockchain_types = @import("../blockchain/types.zig");
-const types = @import("../types/types.zig");
 const Message = blockchain_types.Message;
 const Environment = blockchain_types.Environment;
+const types = @import("../types/types.zig");
 const Hash32 = types.Hash32;
 const Address = types.Address;
 const StateDB = state.StateDB;
@@ -19,7 +20,7 @@ test "create contract" {
     const allocator = arena.allocator();
 
     const coinbase = common.hexToAddress("0x1000000000000000000000000000000000000001");
-    var coinbase_state = try state.AccountState.init(allocator, coinbase, 1, 0, &[_]u8{});
+    const coinbase_state = try state.AccountState.init(allocator, coinbase, 1, 0, &[_]u8{});
     var sdb = try StateDB.init(allocator, &[_]state.AccountState{coinbase_state});
     defer sdb.deinit();
 
@@ -38,11 +39,11 @@ test "create contract" {
         .chain_id = ChainID.SpecTest,
     };
 
-    var vmi = vm.VM.init(allocator, env);
+    var vmi = vm.VM.init(std.testing.allocator, env);
     defer vmi.deinit();
 
     // Create contract.
-    var contract_addr: Address = blk: {
+    const contract_addr: Address = blk: {
         const msg: Message = .{
             .sender = coinbase,
             .target = null,
@@ -67,7 +68,7 @@ test "create contract" {
         };
 
         try sdb.startTx();
-        var out = try vmi.processMessageCall(msg);
+        const out = try vmi.processMessageCall(msg);
 
         // Check the contract creation execution was successful.
         try std.testing.expect(out.success);
@@ -86,7 +87,7 @@ test "create contract" {
         };
 
         try sdb.startTx();
-        var out = try vmi.processMessageCall(msg);
+        const out = try vmi.processMessageCall(msg);
 
         // Check that the execution didn't fail, thus the contract was found and executed correctly.
         try std.testing.expect(out.success);
