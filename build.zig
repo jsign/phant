@@ -1,4 +1,4 @@
-pub const std = @import("std");
+const std = @import("std");
 const LazyPath = std.Build.LazyPath;
 
 // Although this function looks imperative, note that its job is to

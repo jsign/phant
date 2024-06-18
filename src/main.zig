@@ -1,7 +1,17 @@
 const std = @import("std");
-const lib = @import("./lib.zig");
+const types = @import("types/types.zig");
+const crypto = @import("crypto/crypto.zig");
+const ecdsa = crypto.ecdsa;
+const config = @import("config/config.zig");
+const AccountState = @import("state/state.zig").AccountState;
+const Address = types.Address;
+const VM = @import("blockchain/vm.zig").VM;
+const StateDB = @import("state/state.zig").StateDB;
+const Block = types.Block;
+const Tx = types.Tx;
+const TxSigner = @import("signer/signer.zig").TxSigner;
 const httpz = @import("httpz");
-const engine_api = lib.engine_api;
+const engine_api = @import("engine_api/engine_api.zig");
 const json = std.json;
 
 fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
