@@ -119,7 +119,7 @@ pub const StateDB = struct {
     }
 
     pub fn setBalance(self: *StateDB, addr: Address, balance: u256) !void {
-        var account = self.db.getPtr(addr);
+        const account = self.db.getPtr(addr);
         if (account) |acc| {
             acc.balance = balance;
             return;
@@ -137,7 +137,7 @@ pub const StateDB = struct {
     }
 
     pub fn setContractCode(self: *StateDB, addr: Address, code: []const u8) !void {
-        var account = self.db.getPtr(addr);
+        const account = self.db.getPtr(addr);
         if (account) |acc| {
             if (acc.code.len > 0)
                 return error.AccountAlreadyHasCode;

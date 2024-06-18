@@ -28,7 +28,7 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     std.log.info("Welcome to phant! 🐘", .{});
 

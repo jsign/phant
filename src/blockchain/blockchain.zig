@@ -106,7 +106,7 @@ pub const Blockchain = struct {
 
         // Check base fee.
         const parent_gas_target = prev_block.gas_limit / params.elasticity_multiplier;
-        var expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
+        const expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
             prev_block.base_fee_per_gas
         else if (prev_block.gas_used > parent_gas_target) blk: {
             const gas_used_delta = prev_block.gas_used - parent_gas_target;
@@ -219,7 +219,7 @@ pub const Blockchain = struct {
         }
 
         if (items.len > 0) {
-            var encoded_item = try items[0].encode(arena);
+            const encoded_item = try items[0].encode(arena);
             keyvals[i] = try mpt.KeyVal.init(arena, &[_]u8{0x80}, encoded_item);
             i += 1;
         }
@@ -302,7 +302,7 @@ pub const Blockchain = struct {
             try env.state.putAccessedAccount(precompile_addr);
         }
 
-        var message: Message = .{
+        const message: Message = .{
             .sender = sender,
             .target = tx.getTo(),
             .gas = gas,
@@ -366,7 +366,7 @@ pub const Blockchain = struct {
         const access_list_cost = switch (tx) {
             .LegacyTx => 0,
             inline else => |al_tx| blk: {
-                var sum: u64 = 0;
+                const sum: u64 = 0;
                 for (al_tx.access_list) |al| {
                     data_cost += params.tx_access_list_address_cost;
                     data_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;

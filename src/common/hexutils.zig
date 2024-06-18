@@ -10,7 +10,7 @@ pub fn prefixedhex2hash(dst: []u8, src: []const u8) !void {
     if (src.len < 2 or src.len % 2 != 0) {
         return error.InvalidInput;
     }
-    var skip0x: usize = if (src[1] == 'X' or src[1] == 'x') 2 else 0;
+    const skip0x: usize = if (src[1] == 'X' or src[1] == 'x') 2 else 0;
     if (src[skip0x..].len != 2 * dst.len) {
         return error.InvalidOutputLength;
     }
@@ -24,7 +24,7 @@ pub fn prefixedhex2byteslice(allocator: Allocator, src: []const u8) ![]u8 {
     if (src.len < 2 or src.len % 2 != 0) {
         return error.InvalidInput;
     }
-    var skip0x: usize = if (src[1] == 'X' or src[1] == 'x') 2 else 0;
+    const skip0x: usize = if (src[1] == 'X' or src[1] == 'x') 2 else 0;
     // TODO when refactoring, ensure the alloc is also made in the equivalent for prefixedhex2hash
     var dst: []u8 = try allocator.alloc(u8, src[skip0x..].len / 2);
 
@@ -38,7 +38,7 @@ pub fn prefixedHexToInt(comptime T: type, hex: []const u8) !T {
     if (hex.len < 3) {
         return error.InvalidInput;
     }
-    var skip0x: usize = if (hex[1] == 'X' or hex[1] == 'x') 2 else 0;
+    const skip0x: usize = if (hex[1] == 'X' or hex[1] == 'x') 2 else 0;
     return std.fmt.parseInt(T, hex[skip0x..], 16);
 }
 

@@ -52,7 +52,7 @@ pub const Receipt = struct {
 
         inline for (0..3) |i| {
             const hash_16bit_word = hash[i * 2 .. (i + 1) * 2].*;
-            const bit_to_set = @as(u11, @intCast(std.mem.readInt(u16, &hash_16bit_word, std.builtin.Endian.Big) & 0x07FF));
+            const bit_to_set = @as(u11, @intCast(std.mem.readInt(u16, &hash_16bit_word, std.builtin.Endian.big) & 0x07FF));
             const bit_index = 0x07FF - bit_to_set;
 
             const byte_index = bit_index / 8;
