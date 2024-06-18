@@ -11,14 +11,14 @@ const LogsBloom = types.LogsBloom;
 const TxTypes = types.TxTypes;
 
 pub const Receipt = struct {
-    succeeded: bool,
+    succeeded: []const u8,
     cumulative_gas_used: u64,
     bloom: LogsBloom,
     logs: []Log,
 
     pub fn init(succeeded: bool, cumulative_gas_used: u64, logs: []Log) Receipt {
         return Receipt{
-            .succeeded = succeeded,
+            .succeeded = if (succeeded) &[_]u8{0x01} else &[_]u8{},
             .cumulative_gas_used = cumulative_gas_used,
             .bloom = calculateLogsBloom(logs),
             .logs = logs,

@@ -6,6 +6,7 @@ const blockchain = @import("../blockchain/blockchain.zig");
 const vm = @import("../blockchain/vm.zig");
 const ecdsa = @import("../crypto/crypto.zig").ecdsa;
 const state = @import("../state/state.zig");
+const common = @import("../common/common.zig");
 const TxSigner = @import("../signer/signer.zig").TxSigner;
 const Allocator = std.mem.Allocator;
 const Address = types.Address;
@@ -39,17 +40,16 @@ pub const Fixture = struct {
 pub const FixtureTest = struct {
     _info: struct {
         @"filling-transition-tool": []const u8,
-        @"filling-block-build-tool": []const u8,
+        @"reference-spec": []const u8,
+        @"reference-spec-version": []const u8,
     },
+    network: []const u8,
+    genesisRLP: HexString,
     blocks: []const struct {
         rlp: []const u8,
-        blockHeader: BlockHeaderHex,
-        transactions: []TransactionHex,
+        expectException: ?[]const u8 = null,
     },
-    genesisBlockHeader: BlockHeaderHex,
-    genesisRLP: HexString,
     lastblockhash: HexString,
-    network: []const u8,
     pre: ChainState,
     postState: ChainState,
     sealEngine: []const u8,
@@ -78,28 +78,37 @@ pub const FixtureTest = struct {
         var out = try allocator.alloc(u8, self.genesisRLP.len / 2);
         var rlp_bytes = try std.fmt.hexToBytes(out, self.genesisRLP[2..]);
         const parent_block = try Block.decode(allocator, rlp_bytes);
-        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.SpecTest, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
+        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, std.mem.zeroes([256]Hash32));
 
         // Execute blocks.
         for (self.blocks) |encoded_block| {
             out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
             const block = try Block.decode(allocator, rlp_bytes);
-            try chain.runBlock(block);
+
+            const block_should_fail = if (encoded_block.expectException) |_| true else false;
+            if (chain.runBlock(block)) |_| {
+                if (block_should_fail) {
+                    return error.BlockExecutionValidityExpectationMismatch;
+                }
+            } else |_| {
+                if (!block_should_fail) {
+                    return error.BlockExecutionValidityExpectationMismatch;
+                }
+            }
         }
 
         // Verify that the post state matches what the fixture `postState` claims is true.
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
             var exp_account_state: AccountState = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
-            std.debug.print("checking account state: {s}\n", .{std.fmt.fmtSliceHexLower(&exp_account_state.addr)});
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
-                log.err("expected nonce {d} but got {d}", .{ exp_account_state.nonce, got_account_state.nonce });
+                log.err("{} expected nonce {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.nonce, got_account_state.nonce });
                 return error.PostStateNonceMismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
-                log.err("expected balance {d} but got {d}", .{ exp_account_state.balance, got_account_state.balance });
+                log.err("{} expected balance {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.balance, got_account_state.balance });
                 return error.PostStateBalanceMismatch;
             }
 
@@ -111,8 +120,10 @@ pub const FixtureTest = struct {
             var it_got = got_storage.iterator();
             while (it_got.next()) |storage_entry| {
                 const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
-                if (!std.mem.eql(u8, storage_entry.value_ptr, &val))
+                if (!std.mem.eql(u8, storage_entry.value_ptr, &val)) {
+                    log.err("{} expected storage slot value at {d}, got {s}, exp {s}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), storage_entry.key_ptr.*, std.fmt.fmtSliceHexLower(&storage_entry.value_ptr.*), std.fmt.fmtSliceHexLower(&val) });
                     return error.PostStateStorageValueMismatch;
+                }
             }
         }
 
@@ -121,66 +132,6 @@ pub const FixtureTest = struct {
 };
 
 pub const ChainState = std.json.ArrayHashMap(AccountStateHex);
-
-pub const BlockHeaderHex = struct {
-    parentHash: HexString,
-    uncleHash: HexString,
-    coinbase: HexString,
-    stateRoot: HexString,
-    transactionsTrie: HexString,
-    receiptTrie: HexString,
-    bloom: HexString,
-    difficulty: HexString,
-    number: HexString,
-    gasLimit: HexString,
-    gasUsed: HexString,
-    timestamp: HexString,
-    extraData: HexString,
-    mixHash: HexString,
-    nonce: HexString,
-    hash: HexString,
-};
-
-pub const TransactionHex = struct {
-    type: HexString,
-    chainId: HexString,
-    nonce: HexString,
-    gasPrice: HexString,
-    value: HexString,
-    to: HexString,
-    protected: bool,
-    secretKey: HexString,
-    data: HexString,
-    gasLimit: HexString,
-
-    pub fn toTx(self: TransactionHex, allocator: Allocator, tx_signer: TxSigner) !Tx {
-        const type_ = try std.fmt.parseInt(u8, self.type[2..], 16);
-        std.debug.assert(type_ == 0);
-        const chain_id = try std.fmt.parseInt(u64, self.chainId[2..], 16);
-        if (chain_id != tx_signer.chain_id) {
-            return error.InvalidChainId;
-        }
-        const nonce = try std.fmt.parseUnsigned(u64, self.nonce[2..], 16);
-        const gas_price = try std.fmt.parseUnsigned(u256, self.gasPrice[2..], 16);
-        const value = try std.fmt.parseUnsigned(u256, self.value[2..], 16);
-        var to: ?Address = null;
-        if (self.to[2..].len != 0) {
-            to = std.mem.zeroes(Address);
-            _ = try std.fmt.hexToBytes(&to.?, self.to[2..]);
-        }
-        var data = try allocator.alloc(u8, self.data[2..].len / 2);
-        _ = try std.fmt.hexToBytes(data, self.data[2..]);
-        const gas_limit = try std.fmt.parseUnsigned(u64, self.gasLimit[2..], 16);
-
-        var tx = Tx.initLegacyTx(nonce, gas_price, value, to, data, gas_limit);
-        var privkey: ecdsa.PrivateKey = undefined;
-        _ = try std.fmt.hexToBytes(&privkey, self.secretKey[2..]);
-        const sig = try tx_signer.sign(allocator, tx, privkey);
-        tx.setSignature(sig.v, sig.r, sig.s);
-
-        return tx;
-    }
-};
 
 pub const AccountStateHex = struct {
     nonce: HexString,
@@ -218,13 +169,25 @@ const AccountStorageHex = std.json.ArrayHashMap(HexString);
 test "execution-spec-tests" {
     var allocator = std.testing.allocator;
 
-    var ft = try Fixture.fromBytes(allocator, @embedFile("fixtures/shanghai/warm_coinbase_call_out_of_gas.json"));
-    defer ft.deinit();
+    var test_folder = try std.fs.cwd().openIterableDir("src/tests/fixtures", .{});
+    defer test_folder.close();
 
-    var it = ft.tests.value.map.iterator();
-    var count: usize = 0;
-    while (it.next()) |entry| {
-        try std.testing.expect(try entry.value_ptr.run(allocator));
-        count += 1;
+    var test_it = try test_folder.walk(allocator);
+    defer test_it.deinit();
+    while (try test_it.next()) |f| {
+        if (f.kind == .directory) continue;
+
+        std.log.debug("##### Spec-test file {s} #####", .{f.basename});
+        var file_content = try f.dir.readFileAlloc(allocator, f.basename, 1 << 30);
+        defer allocator.free(file_content);
+
+        var ft = try Fixture.fromBytes(allocator, file_content);
+        defer ft.deinit();
+
+        var it = ft.tests.value.map.iterator();
+        while (it.next()) |entry| {
+            std.log.debug("-> Spec-test file {s}", .{entry.key_ptr.*});
+            try std.testing.expect(try entry.value_ptr.run(allocator));
+        }
     }
 }

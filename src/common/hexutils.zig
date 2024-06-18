@@ -33,17 +33,13 @@ pub fn prefixedhex2byteslice(allocator: Allocator, src: []const u8) ![]u8 {
     return dst;
 }
 
-// This function turns an optionally '0x'-prefixed hex string
-// to a u64
-pub fn prefixedhex2u64(src: []const u8) !u64 {
-    // execution engine integers can be odd-length :facepalm:
-    if (src.len < 3) {
+// prefixedHexToint turns an optionally '0x'-prefixed hex string to a integer type T.
+pub fn prefixedHexToInt(comptime T: type, hex: []const u8) !T {
+    if (hex.len < 3) {
         return error.InvalidInput;
     }
-
-    var skip0x: usize = if (src[1] == 'X' or src[1] == 'x') 2 else 0;
-
-    return std.fmt.parseInt(u64, src[skip0x..], 16);
+    var skip0x: usize = if (hex[1] == 'X' or hex[1] == 'x') 2 else 0;
+    return std.fmt.parseInt(T, hex[skip0x..], 16);
 }
 
 // hexToAddress parses an optionally '0x'-prefixed hext string to an Address.

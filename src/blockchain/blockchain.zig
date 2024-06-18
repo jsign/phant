@@ -279,7 +279,6 @@ pub const Blockchain = struct {
 
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
         const effective_gas_fee = tx.getGasLimit() * env.gas_price;
-        try env.state.incrementNonce(sender);
 
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
         try env.state.setBalance(sender, sender_balance_after_gas_fee);
@@ -297,23 +296,27 @@ pub const Blockchain = struct {
             },
         }
 
-        var message = try prepareMessage(
-            allocator,
-            sender,
-            tx.getTo(),
-            tx.getValue(),
-            tx.getData(),
-            gas,
-            env,
-        );
-        const output = try processMessageCall(message, env);
+        // EIP-2929
+        try env.state.putAccessedAccount(sender);
+        for (params.precompiled_contract_addresses) |precompile_addr| {
+            try env.state.putAccessedAccount(precompile_addr);
+        }
+
+        var message: Message = .{
+            .sender = sender,
+            .target = tx.getTo(),
+            .gas = gas,
+            .value = tx.getValue(),
+            .data = tx.getData(),
+        };
+        const output = try processMessageCall(allocator, message, env);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
         const gas_refund_amount = (output.gas_left + gas_refund) * env.gas_price;
 
         const priority_fee_per_gas = env.gas_price - env.base_fee_per_gas;
-        const transaction_fee = (tx.getGasLimit() - output.gas_left) * priority_fee_per_gas;
+        const transaction_fee = (gas_used - gas_refund) * priority_fee_per_gas;
         const total_gas_used = gas_used - gas_refund;
 
         sender_account = env.state.getAccount(sender);
@@ -376,70 +379,11 @@ pub const Blockchain = struct {
     }
 
     fn initCodeCost(code_length: usize) u64 {
-        return params.gas_init_code_word_const * (code_length + 31) / 32;
+        return params.gas_init_code_word_const * ((code_length + 31) / 32);
     }
 
-    // prepareMessage prepares an EVM message.
-    // The caller must call deinit() on the returned Message.
-    pub fn prepareMessage(
-        allocator: Allocator,
-        caller: Address,
-        target: ?Address,
-        value: u256,
-        data: []const u8,
-        gas: u64,
-        env: Environment,
-    ) !Message {
-        var current_target: Address = undefined;
-        var code_address: Address = undefined;
-        var msg_data: []const u8 = undefined;
-        var code: []const u8 = undefined;
-
-        if (target) |targ| {
-            current_target = targ;
-            msg_data = data;
-            code = env.state.getAccount(targ).code;
-            code_address = targ;
-        } else {
-            current_target = try computeContractAddress(allocator, caller, env.state.getAccount(caller).nonce - 1);
-            msg_data = &[_]u8{0};
-            code = data;
-        }
-
-        try env.state.putAccessedAccount(current_target);
-        try env.state.putAccessedAccount(caller);
-        for (params.precompiled_contract_addresses) |precompile_addr| {
-            try env.state.putAccessedAccount(precompile_addr);
-        }
-
-        return .{
-            .caller = caller,
-            .target = target,
-            .current_target = current_target,
-            .gas = gas,
-            .value = value,
-            .data = msg_data,
-            .code_address = code_address,
-            .code = code,
-        };
-    }
-
-    fn computeContractAddress(allocator: Allocator, address: Address, nonce: u64) !Address {
-        var out = std.ArrayList(u8).init(allocator);
-        defer out.deinit();
-        try rlp.serialize(struct { addr: Address, nonce: u64 }, allocator, .{ .addr = address, .nonce = nonce }, &out);
-
-        var computed_address: [Keccak256.digest_length]u8 = undefined;
-        Keccak256.hash(out.items, &computed_address, .{});
-
-        var padded_address: Address = std.mem.zeroes(Address);
-        @memcpy(&padded_address, computed_address[12..]);
-
-        return padded_address;
-    }
-
-    fn processMessageCall(message: Message, env: Environment) !vm.MessageCallOutput {
-        var vm_instance = VM.init(env);
+    fn processMessageCall(allocator: Allocator, message: Message, env: Environment) !vm.MessageCallOutput {
+        var vm_instance = VM.init(allocator, env);
         defer vm_instance.deinit();
 
         return try vm_instance.processMessageCall(message);

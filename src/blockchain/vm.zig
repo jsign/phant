@@ -24,15 +24,17 @@ const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e5
 pub const VM = struct {
     const vmlog = std.log.scoped(.vm);
 
+    allocator: Allocator,
     env: Environment,
     evm: [*c]evmc.evmc_vm,
     host: evmc.struct_evmc_host_interface,
 
     // init creates a new EVM VM instance. The caller must call deinit() when done.
-    pub fn init(env: Environment) VM {
+    pub fn init(allocator: Allocator, env: Environment) VM {
         var evm = evmc.evmc_create_evmone();
         vmlog.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
         return .{
+            .allocator = allocator,
             .env = env,
             .evm = evm,
             .host = evmc.struct_evmc_host_interface{
@@ -63,22 +65,51 @@ pub const VM = struct {
 
     // processMessageCall executes a message call.
     pub fn processMessageCall(self: *VM, msg: Message) !MessageCallOutput {
-        const evmc_message: evmc.struct_evmc_message = .{
-            .kind = if (msg.target != null) evmc.EVMC_CALL else evmc.EVMC_CREATE,
-            .flags = 0,
-            .depth = 0,
-            .gas = @intCast(msg.gas),
-            .recipient = toEVMCAddress(msg.current_target),
-            .sender = toEVMCAddress(msg.caller),
-            .input_data = if (msg.target != null) msg.data.ptr else msg.code.ptr,
-            .input_size = if (msg.target != null) msg.data.len else msg.code.len,
-            .value = blk: {
-                var tx_value: [32]u8 = undefined;
-                std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
-                break :blk .{ .bytes = tx_value };
-            },
-            .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
-            .code_address = toEVMCAddress(msg.target),
+        const evmc_message = if (msg.target) |target| blk: {
+            const evmc_message: evmc.struct_evmc_message = .{
+                .kind = evmc.EVMC_CALL,
+                .flags = 0,
+                .depth = 0,
+                .gas = @intCast(msg.gas),
+                .recipient = toEVMCAddress(target),
+                .sender = toEVMCAddress(msg.sender),
+                .input_data = msg.data.ptr,
+                .input_size = msg.data.len,
+                .value = blk2: {
+                    var tx_value: [32]u8 = undefined;
+                    std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
+                    break :blk2 .{ .bytes = tx_value };
+                },
+                .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
+                .code_address = toEVMCAddress(msg.target),
+            };
+
+            try self.env.state.incrementNonce(msg.sender);
+
+            break :blk evmc_message;
+        } else blk: {
+            break :blk evmc.struct_evmc_message{
+                .kind = evmc.EVMC_CREATE,
+                .flags = 0,
+                .depth = 0,
+                .gas = @intCast(msg.gas),
+                .recipient = .{
+                    .bytes = blk2: {
+                        const sender_nonce: u64 = @intCast(self.env.state.getAccount(msg.sender).nonce);
+                        break :blk2 common.computeCREATEContractAddress(self.allocator, msg.sender, sender_nonce) catch unreachable;
+                    },
+                },
+                .sender = .{ .bytes = msg.sender },
+                .input_data = msg.data.ptr,
+                .input_size = msg.data.len,
+                .value = blk2: {
+                    var tx_value: [32]u8 = undefined;
+                    std.mem.writeIntSliceBig(u256, &tx_value, msg.value);
+                    break :blk2 .{ .bytes = tx_value };
+                },
+                .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
+                .code_address = toEVMCAddress(msg.target),
+            };
         };
 
         const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
@@ -352,11 +383,41 @@ const EVMOneHost = struct {
         return evmc.EVMC_ACCESS_COLD;
     }
 
-    fn call(ctx: ?*evmc.struct_evmc_host_context, msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
+    fn call(ctx: ?*evmc.struct_evmc_host_context, _msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        evmclog.debug("call() kind={d} depth={d} sender={} recipient={}", .{ msg.*.kind, msg.*.depth, fmtSliceHexLower(&msg.*.sender.bytes), fmtSliceHexLower(&msg.*.recipient.bytes) });
 
-        if (msg.*.depth > params.stack_depth_limit) {
+        var msg = _msg.*;
+
+        const code = switch (msg.kind) {
+            evmc.EVMC_CALL,
+            evmc.EVMC_DELEGATECALL,
+            evmc.EVMC_CALLCODE,
+            => vm.env.state.getAccount(fromEVMCAddress(msg.code_address)).code,
+            evmc.EVMC_CREATE,
+            evmc.EVMC_CREATE2,
+            => if (msg.input_size == 0) &[_]u8{} else msg.input_data[0..msg.input_size],
+            else => @panic("unknown message kind"),
+        };
+
+        const sender = fromEVMCAddress(msg.sender);
+        const recipient = fromEVMCAddress(msg.recipient);
+
+        msg.recipient = switch (msg.kind) {
+            evmc.EVMC_CREATE => blk: {
+                const sender_nonce: u64 = @intCast(vm.env.state.getAccount(sender).nonce);
+                break :blk .{ .bytes = common.computeCREATEContractAddress(vm.allocator, sender, sender_nonce) catch unreachable };
+            },
+            evmc.EVMC_CREATE2 => .{ .bytes = common.computeCREATE2ContractAddress(sender, msg.create2_salt.bytes, code) catch unreachable },
+            evmc.EVMC_CALL,
+            evmc.EVMC_DELEGATECALL,
+            evmc.EVMC_CALLCODE,
+            => msg.recipient,
+            else => @panic("unknown message kind"),
+        };
+
+        evmclog.debug("call() kind={d} depth={d} sender={} recipient={} gas={}", .{ msg.kind, msg.depth, fmtSliceHexLower(&msg.sender.bytes), fmtSliceHexLower(&msg.recipient.bytes), msg.gas });
+
+        if (msg.depth > params.stack_depth_limit) {
             return .{
                 .status_code = evmc.EVMC_CALL_DEPTH_EXCEEDED,
                 .gas_left = 0,
@@ -369,17 +430,23 @@ const EVMOneHost = struct {
             };
         }
 
+        vm.env.state.putAccessedAccount(recipient) catch |err| switch (err) {
+            error.OutOfMemory => @panic("OOO"),
+        };
+
+        if (msg.kind == evmc.EVMC_CREATE or msg.kind == evmc.EVMC_CREATE2) {
+            // Increment the nonce of the contract creator.
+            vm.env.state.incrementNonce(sender) catch unreachable;
+        }
+
         // Persist current context in case we need it for scope revert.
         var prev_statedb = vm.env.state.snapshot() catch |err| switch (err) {
             error.OutOfMemory => @panic("OOO"),
         };
 
-        const recipient_addr = fromEVMCAddress(msg.*.recipient);
-
         // Send value.
-        const value = std.mem.readInt(u256, &msg.*.value.bytes, std.builtin.Endian.Big);
+        const value = std.mem.readInt(u256, &msg.value.bytes, std.builtin.Endian.Big);
         if (value > 0) {
-            const sender = fromEVMCAddress(msg.*.sender);
             const sender_balance = vm.env.state.getAccount(sender).balance;
             if (sender_balance < value) {
                 return .{
@@ -396,53 +463,64 @@ const EVMOneHost = struct {
             vm.env.state.setBalance(sender, sender_balance - value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
-            const recipient_balance = vm.env.state.getAccount(recipient_addr).balance;
-            vm.env.state.setBalance(sender, recipient_balance + value) catch |err| switch (err) {
+            const recipient_balance = vm.env.state.getAccount(recipient).balance;
+            vm.env.state.setBalance(recipient, recipient_balance + value) catch |err| switch (err) {
                 error.OutOfMemory => @panic("OOO"),
             };
         }
-
-        const code = switch (msg.*.kind) {
-            evmc.EVMC_CALL, evmc.EVMC_DELEGATECALL, evmc.EVMC_CALLCODE => blk: {
-                const code_address = fromEVMCAddress(msg.*.code_address);
-                const code = vm.env.state.getAccount(code_address).code;
-                break :blk code;
-            },
-            evmc.EVMC_CREATE, evmc.EVMC_CREATE2 => msg.*.input_data[0..msg.*.input_size],
-            else => @panic("unkown message kind"),
-        };
 
         var result = vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),
             @ptrCast(vm),
             evmc.EVMC_SHANGHAI, // TODO: generalize from block_number.
-            msg,
+            &msg,
             code.ptr,
             code.len,
         );
 
         if (result.status_code == evmc.EVMC_SUCCESS) {
-            if (msg.*.kind == evmc.EVMC_CREATE or msg.*.kind == evmc.EVMC_CREATE2) {
-                vm.env.state.setContractCode(recipient_addr, result.output_data[0..result.output_size]) catch |err| switch (err) {
+            if (msg.kind == evmc.EVMC_CREATE or msg.kind == evmc.EVMC_CREATE2) {
+                const contract_code_gas = @as(i64, @intCast(result.output_size)) * params.gas_code_deposit;
+
+                if ((result.output_size > 0 and result.output_data == 0xEF) or result.output_size > params.max_code_size or contract_code_gas > result.gas_left) {
+                    result.release.?(&result);
+                    vm.env.state.* = prev_statedb;
+                    return .{
+                        .status_code = evmc.EVMC_FAILURE,
+                        .gas_left = 0,
+                        .gas_refund = 0,
+                        .output_data = null,
+                        .output_size = 0,
+                        .release = null,
+                        .create_address = std.mem.zeroes(evmc.struct_evmc_address),
+                        .padding = [_]u8{0} ** 4,
+                    };
+                }
+                result.gas_left -= contract_code_gas;
+                result.create_address = msg.recipient;
+
+                // Save new contract code and set nonce to 1.
+                const contract_code = if (result.output_size == 0) &[_]u8{} else result.output_data[0..result.output_size];
+                vm.env.state.setContractCode(fromEVMCAddress(msg.recipient), contract_code) catch |err| switch (err) {
                     error.OutOfMemory => @panic("OOO"),
                     error.AccountAlreadyHasCode => @panic("account already has code"),
                 };
+                vm.env.state.incrementNonce(fromEVMCAddress(msg.recipient)) catch unreachable;
             }
-            // Free the backup and indireclty commit to the changes that happened.
+            // Free the backup and indirectly commit to the changes that happened.
             prev_statedb.deinit();
 
             // EIP-158.
-            if (vm.env.state.isEmpty(recipient_addr))
-                vm.env.state.addTouchedAddress(recipient_addr) catch |err| switch (err) {
+            if (vm.env.state.isEmpty(recipient))
+                vm.env.state.addTouchedAddress(recipient) catch |err| switch (err) {
                     error.OutOfMemory => @panic("OOO"),
                 };
         } else {
             // If the *CALL failed, we restore the previous statedb.
             vm.env.state.* = prev_statedb;
         }
-
-        evmclog.debug("call() end depth={d} status_code={} gas_left={}", .{ msg.*.depth, result.status_code, result.gas_left });
+        evmclog.debug("call() end depth={d} status_code={} gas_left={} create_address={}", .{ msg.depth, result.status_code, result.gas_left, std.fmt.fmtSliceHexLower(&result.create_address.bytes) });
 
         return result;
     }

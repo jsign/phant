@@ -2,11 +2,12 @@ const std = @import("std");
 const types = @import("../types/types.zig");
 const hexutils = @import("hexutils.zig");
 const rlp = @import("rlp.zig");
+const contract = @import("contract.zig");
 
 // Hex
 pub const prefixedhex2hash = hexutils.prefixedhex2hash;
 pub const prefixedhex2byteslice = hexutils.prefixedhex2byteslice;
-pub const prefixedhex2u64 = hexutils.prefixedhex2u64;
+pub const prefixedHexToInt = hexutils.prefixedHexToInt;
 pub const hexToAddress = hexutils.hexToAddress;
 pub const comptimeHexToBytes = hexutils.comptimeHexToBytes;
 
@@ -18,3 +19,7 @@ pub const AddressKeySet = std.AutoHashMap(AddressKey, void);
 // RLP
 pub const decodeRLP = rlp.decodeRLP;
 pub const decodeRLPAndHash = rlp.decodeRLPAndHash;
+
+// Address
+pub const computeCREATEContractAddress = contract.computeCREATEContractAddress;
+pub const computeCREATE2ContractAddress = contract.computeCREATE2ContractAddress;

@@ -5,8 +5,9 @@ const vm = @import("../blockchain/vm.zig");
 const state = @import("../state/state.zig");
 const blockchain = @import("../blockchain/blockchain.zig");
 const blockchain_types = @import("../blockchain/types.zig");
-const Environment = blockchain_types.Environment;
 const types = @import("../types/types.zig");
+const Message = blockchain_types.Message;
+const Environment = blockchain_types.Environment;
 const Hash32 = types.Hash32;
 const Address = types.Address;
 const StateDB = state.StateDB;
@@ -37,17 +38,16 @@ test "create contract" {
         .chain_id = ChainID.SpecTest,
     };
 
-    var vmi = vm.VM.init(env);
+    var vmi = vm.VM.init(allocator, env);
     defer vmi.deinit();
 
     // Create contract.
     var contract_addr: Address = blk: {
-        const msg = try blockchain.Blockchain.prepareMessage(
-            allocator,
-            coinbase,
-            null,
-            0,
-            &[_]u8{
+        const msg: Message = .{
+            .sender = coinbase,
+            .target = null,
+            .value = 0,
+            .data = &[_]u8{
                 // Init
                 0x60, 0x8, // PUSH1 8
                 0x60, 0x0C, // PUSH 12
@@ -56,7 +56,6 @@ test "create contract" {
                 0x60, 0x8, // PUSH1 8
                 0x60, 0x00, // PUSH1 0
                 0xF3, // Return
-
                 // Runtime code
                 0x60, 0x01, // PUSH1 2 - Push 2 on the stack
                 0x60, 0x02, // PUSH1 4 - Push 4 on the stack
@@ -64,9 +63,8 @@ test "create contract" {
                 0x60, 0x00, // PUSH1 0
                 0x55, // SSTORE
             },
-            10_000,
-            env,
-        );
+            .gas = 10_000,
+        };
 
         try sdb.startTx();
         var out = try vmi.processMessageCall(msg);
@@ -74,20 +72,18 @@ test "create contract" {
         // Check the contract creation execution was successful.
         try std.testing.expect(out.success);
 
-        break :blk msg.current_target;
+        break :blk try common.computeCREATEContractAddress(allocator, coinbase, 1);
     };
 
     // Run it.
     {
-        const msg = try blockchain.Blockchain.prepareMessage(
-            allocator,
-            coinbase,
-            contract_addr,
-            0,
-            &[_]u8{},
-            100_000,
-            env,
-        );
+        const msg: Message = .{
+            .sender = coinbase,
+            .target = contract_addr,
+            .value = 0,
+            .data = &[_]u8{},
+            .gas = 100_000,
+        };
 
         try sdb.startTx();
         var out = try vmi.processMessageCall(msg);
