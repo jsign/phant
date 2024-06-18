@@ -83,6 +83,8 @@ pub fn build(b: *std.Build) void {
     evmone.linkLibCpp();
     b.installArtifact(evmone);
 
+    const zigcli = b.dependency("zigcli", .{});
+
     const exe = b.addExecutable(.{
         .name = "phant",
         // In this case the main source file is merely a path, however, in more
@@ -108,6 +110,7 @@ pub fn build(b: *std.Build) void {
     exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
     exe.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
     exe.root_module.addImport("httpz", mod_httpz);
+    exe.root_module.addImport("simargs", zigcli.module("simargs"));
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
