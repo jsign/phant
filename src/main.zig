@@ -35,7 +35,7 @@ const PhantArgs = struct {
     };
 
     pub const __messages__ = .{
-        .engine_api_port = "Speficy the port to listen to for Engine API messages",
+        .engine_api_port = "Specify the port to listen to for Engine API messages",
     };
 };
 
