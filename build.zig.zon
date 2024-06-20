@@ -14,6 +14,10 @@
             .url = "https://github.com/karlseguin/http.zig/archive/c8b04e3.tar.gz",
             .hash = "1220f998896588d034c3027f2dae37b751b55cd0f12a6abaafc800b3f6954e93f97b",
         },
+        .zigcli = .{
+            .url = "https://github.com/jiacai2050/zigcli/archive/54d095c.tar.gz",
+            .hash = "1220e8fb37224ab6ee9c575129594a808643b548596d63dd8b87cb42e22a7eed9f51",
+        },
     },
     .paths = .{""},
 }

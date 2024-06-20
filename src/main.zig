@@ -13,6 +13,7 @@ const TxSigner = @import("signer/signer.zig").TxSigner;
 const httpz = @import("httpz");
 const engine_api = @import("engine_api/engine_api.zig");
 const json = std.json;
+const simargs = @import("simargs");
 
 fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
     if (try req.json(engine_api.EngineAPIRequest)) |payload| {
@@ -26,17 +27,34 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
     }
 }
 
+const PhantArgs = struct {
+    engine_api_port: ?u16,
+
+    pub const __shorts__ = .{
+        .engine_api_port = .p,
+    };
+
+    pub const __messages__ = .{
+        .engine_api_port = "Specify the port to listen to for Engine API messages",
+    };
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
+    const opts = try simargs.parse(gpa.allocator(), PhantArgs, "", null);
+    defer opts.deinit();
+
+    const port: u16 = if (opts.args.engine_api_port == null) 8551 else opts.args.engine_api_port.?;
+
     std.log.info("Welcome to phant! 🐘", .{});
 
     var engine_api_server = try httpz.Server().init(allocator, .{
-        .port = 8551,
+        .port = port,
     });
     var router = engine_api_server.router();
     router.post("/", engineAPIHandler);
-    std.log.info("Listening on 8551", .{});
+    std.log.info("Listening on {}", .{port});
     try engine_api_server.listen();
 }
