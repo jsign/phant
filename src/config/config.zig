@@ -62,11 +62,18 @@ pub const Config = struct {
     }
 
     pub fn dump(self: *Self, allocator: Allocator) !void {
-        const table = Table(2){
-            .header = [_]String{ "Fork", "Block number" },
-            .rows = &[_][2]String{
-                .{ "Homestead", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.homesteadBlock}) else "off" },
-                .{ "DAO", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.daoForkBlock}) else "off" },
+        const table = Table(3){
+            .header = [_]String{ "Fork", "Block number", "Timestamp" },
+            .rows = &[_][3]String{
+                .{ "Homestead", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.homesteadBlock}) else "off", "na" },
+                .{ "DAO", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.daoForkBlock}) else "off", "na" },
+                .{ "Byzantium", if (self.byzantiumBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.byzantiumBlock}) else "off", "na" },
+                .{ "Constantinople", if (self.constantinopleBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.constantinopleBlock}) else "off", "na" },
+                .{ "Petersburg", if (self.petersburgBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.petersburgBlock}) else "off", "na" },
+                .{ "Istanbul", if (self.istanbulBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.istanbulBlock}) else "off", "na" },
+                .{ "Berlin", if (self.berlinBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.berlinBlock}) else "off", "na" },
+                .{ "London", if (self.londonBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.londonBlock}) else "off", "na" },
+                .{ "Shanghai", "na", if (self.shanghaiTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.shanghaiTime}) else "off" },
             },
             .mode = .box,
         };
