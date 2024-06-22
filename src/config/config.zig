@@ -55,10 +55,6 @@ pub const Config = struct {
             .allocate = .alloc_if_needed,
         };
 
-        // NOTE: this version of the library expects the json to be fully specified,
-        // which isn't always the case. They used to let you parse a string dynamically,
-        // but removed that option. So for the time being, we expect json files to have
-        // all fields set.
         config = (try json.parseFromSlice(Config, allocator, chainspec, options)).value;
         return config;
     }
