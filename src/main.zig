@@ -22,7 +22,7 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
             const execution_payload_json = payload.params[0];
             var execution_payload = try execution_payload_json.to_execution_payload(res.arena);
             defer execution_payload.deinit(res.arena);
-            try engine_api.execution_payload.newPayloadV2Handler(&execution_payload, res.arena);
+            try engine_api.execution_payload.newPayloadV2Handler(&execution_payload);
         } else {
             res.status = 500;
         }

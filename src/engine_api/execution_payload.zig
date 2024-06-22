@@ -65,8 +65,7 @@ pub const ExecutionPayload = struct {
     }
 };
 
-pub fn newPayloadV2Handler(params: *ExecutionPayload, allocator: std.mem.Allocator) !void {
-    _ = allocator;
+pub fn newPayloadV2Handler(params: *ExecutionPayload) !void {
     const block = params.toBlock();
     _ = block;
     // TODO reconstruct the proof from the (currently undefined) execution witness
