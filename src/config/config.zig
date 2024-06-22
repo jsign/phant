@@ -17,25 +17,25 @@ pub const ChainId = enum(u64) {
 pub const Config = struct {
     ChainName: []const u8,
     chainId: u64 = @intFromEnum(ChainId.Mainnet),
-    homesteadBlock: ?u64,
-    daoForkBlock: ?u64,
-    eip150Block: ?u64,
-    eip155Block: ?u64,
-    byzantiumBlock: ?u64,
-    constantinopleBlock: ?u64,
-    petersburgBlock: ?u64,
-    istanbulBlock: ?u64,
-    muirGlacierBlock: ?u64,
-    berlinBlock: ?u64,
-    londonBlock: ?u64,
-    arrowGlacierBlock: ?u64,
-    grayGlacierBlock: ?u64,
-    // ttd: ?u256,
-    // merged: bool,
-    shanghaiTime: ?u64,
-    // cancunTime: ?u64,
-    // pragueTime: ?u64,
-    // osakaTime: ?u64,
+    homesteadBlock: ?u64 = null,
+    daoForkBlock: ?u64 = null,
+    eip150Block: ?u64 = null,
+    eip155Block: ?u64 = null,
+    byzantiumBlock: ?u64 = null,
+    constantinopleBlock: ?u64 = null,
+    petersburgBlock: ?u64 = null,
+    istanbulBlock: ?u64 = null,
+    muirGlacierBlock: ?u64 = null,
+    berlinBlock: ?u64 = null,
+    londonBlock: ?u64 = null,
+    arrowGlacierBlock: ?u64 = null,
+    grayGlacierBlock: ?u64 = null,
+    terminalTotalDifficulty: ?u256 = null,
+    terminalTotalDifficultyPassed: ?bool = null,
+    shanghaiTime: ?u64 = null,
+    cancunTime: ?u64 = null,
+    pragueTime: ?u64 = null,
+    osakaTime: ?u64 = null,
 
     const Self = @This();
 
@@ -52,7 +52,13 @@ pub const Config = struct {
         var config: Config = undefined;
         const options = json.ParseOptions{
             .ignore_unknown_fields = true,
+            .allocate = .alloc_if_needed,
         };
+
+        // NOTE: this version of the library expects the json to be fully specified,
+        // which isn't always the case. They used to let you parse a string dynamically,
+        // but removed that option. So for the time being, we expect json files to have
+        // all fields set.
         config = (try json.parseFromSlice(Config, allocator, chainspec, options)).value;
         return config;
     }
@@ -65,15 +71,21 @@ pub const Config = struct {
         const table = Table(3){
             .header = [_]String{ "Fork", "Block number", "Timestamp" },
             .rows = &[_][3]String{
-                .{ "Homestead", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.homesteadBlock}) else "off", "na" },
-                .{ "DAO", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.daoForkBlock}) else "off", "na" },
-                .{ "Byzantium", if (self.byzantiumBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.byzantiumBlock}) else "off", "na" },
-                .{ "Constantinople", if (self.constantinopleBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.constantinopleBlock}) else "off", "na" },
-                .{ "Petersburg", if (self.petersburgBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.petersburgBlock}) else "off", "na" },
-                .{ "Istanbul", if (self.istanbulBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.istanbulBlock}) else "off", "na" },
-                .{ "Berlin", if (self.berlinBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.berlinBlock}) else "off", "na" },
-                .{ "London", if (self.londonBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.londonBlock}) else "off", "na" },
-                .{ "Shanghai", "na", if (self.shanghaiTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.shanghaiTime}) else "off" },
+                .{ "Homestead", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.homesteadBlock}) else "inactive", "na" },
+                .{ "DAO", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.daoForkBlock}) else "inactive", "na" },
+                .{ "Byzantium", if (self.byzantiumBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.byzantiumBlock}) else "inactive", "na" },
+                .{ "Constantinople", if (self.constantinopleBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.constantinopleBlock}) else "inactive", "na" },
+                .{ "Petersburg", if (self.petersburgBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.petersburgBlock}) else "inactive", "na" },
+                .{ "Istanbul", if (self.istanbulBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.istanbulBlock}) else "inactive", "na" },
+                .{ "Muir Glacier", if (self.muirGlacierBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.muirGlacierBlock}) else "inactive", "na" },
+                .{ "Berlin", if (self.berlinBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.berlinBlock}) else "inactive", "na" },
+                .{ "London", if (self.londonBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.londonBlock}) else "inactive", "na" },
+                .{ "Arrow Glacier", if (self.arrowGlacierBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.arrowGlacierBlock}) else "inactive", "na" },
+                .{ "Gray Glacier", if (self.grayGlacierBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.grayGlacierBlock}) else "inactive", "na" },
+                .{ "Shanghai", "na", if (self.shanghaiTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.shanghaiTime}) else "inactive" },
+                .{ "Cancun", "na", if (self.cancunTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.cancunTime}) else "inactive" },
+                .{ "Prague", "na", if (self.pragueTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.pragueTime}) else "inactive" },
+                .{ "Osaka", "na", if (self.osakaTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.osakaTime}) else "inactive" },
             },
             .mode = .box,
         };

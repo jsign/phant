@@ -34,13 +34,16 @@ var config: Config = undefined;
 const PhantArgs = struct {
     engine_api_port: ?u16,
     network_id: lib.config.ChainId = .Mainnet,
+    chainspec: ?[]const u8,
 
     pub const __shorts__ = .{
         .engine_api_port = .p,
     };
 
     pub const __messages__ = .{
-        .engine_api_port = "Specify the port to listen to for Engine API messages",
+        .engine_api_port = "Speficy the port to listen to for Engine API messages",
+        .network_id = "Specify the chain id of the network",
+        .chainspec = "Specify a custom chainspec JSON file",
     };
 };
 
@@ -48,12 +51,23 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
+    // TODO print usage upon failure (requires upstream changes)
+    // TODO generate version from build and add it here
     const opts = try simargs.parse(gpa.allocator(), PhantArgs, "", null);
     defer opts.deinit();
 
     const port: u16 = if (opts.args.engine_api_port == null) 8551 else opts.args.engine_api_port.?;
 
-    config = if (opts.args.network_id == .Mainnet) try Config.default(allocator) else try Config.fromChainId(opts.args.network_id, gpa.allocator());
+    // Get the chain config from 2 possible sources, by priority
+    // 1. Specified chainspec file
+    // 2. embedded config based on a chain id specified with `--network_id`. If no network
+    // is specified then the default (mainnet) is chosen.
+    if (opts.args.chainspec == null) {
+        config = try Config.fromChainId(opts.args.network_id, gpa.allocator());
+    } else {
+        var file = try std.fs.cwd().openFile(opts.args.chainspec.?, .{});
+        config = try Config.fromChainSpec(try file.readToEndAlloc(gpa.allocator(), try file.getEndPos()), gpa.allocator());
+    }
 
     std.log.info("Welcome to phant! 🐘", .{});
     try config.dump(allocator);
