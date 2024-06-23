@@ -1,6 +1,6 @@
 const std = @import("std");
 const lib = @import("lib.zig");
-const Config = lib.config.Config;
+const ChainConfig = lib.config.ChainConfig;
 const types = @import("types/types.zig");
 const crypto = @import("crypto/crypto.zig");
 const ecdsa = crypto.ecdsa;
@@ -29,7 +29,7 @@ fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
     }
 }
 
-var config: Config = undefined;
+var config: ChainConfig = undefined;
 
 const PhantArgs = struct {
     engine_api_port: ?u16,
@@ -63,10 +63,10 @@ pub fn main() !void {
     // 2. embedded config based on a chain id specified with `--network_id`. If no network
     // is specified then the default (mainnet) is chosen.
     if (opts.args.chainspec == null) {
-        config = try Config.fromChainId(opts.args.network_id, gpa.allocator());
+        config = try ChainConfig.fromChainId(opts.args.network_id, gpa.allocator());
     } else {
         var file = try std.fs.cwd().openFile(opts.args.chainspec.?, .{});
-        config = try Config.fromChainSpec(try file.readToEndAlloc(gpa.allocator(), try file.getEndPos()), gpa.allocator());
+        config = try ChainConfig.fromChainSpec(try file.readToEndAlloc(gpa.allocator(), try file.getEndPos()), gpa.allocator());
     }
 
     std.log.info("Welcome to phant! 🐘", .{});

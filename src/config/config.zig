@@ -14,7 +14,7 @@ pub const ChainId = enum(u64) {
     Sepolia = 11155111,
 };
 
-pub const Config = struct {
+pub const ChainConfig = struct {
     ChainName: []const u8,
     chainId: u64 = @intFromEnum(ChainId.Mainnet),
     homesteadBlock: ?u64 = null,
@@ -49,13 +49,13 @@ pub const Config = struct {
     }
 
     pub fn fromChainSpec(chainspec: []const u8, allocator: Allocator) !Self {
-        var config: Config = undefined;
+        var config: ChainConfig = undefined;
         const options = json.ParseOptions{
             .ignore_unknown_fields = true,
             .allocate = .alloc_if_needed,
         };
 
-        config = (try json.parseFromSlice(Config, allocator, chainspec, options)).value;
+        config = (try json.parseFromSlice(ChainConfig, allocator, chainspec, options)).value;
         return config;
     }
 
