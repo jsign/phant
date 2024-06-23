@@ -94,5 +94,6 @@ test "deserialize sample engine_newPayloadV2" {
     try expect(std.mem.eql(u8, payload.value.method, "engine_newPayloadV2"));
     const execution_payload_json = payload.value.params[0];
     var ep = try execution_payload_json.to_execution_payload(std.testing.allocator);
-    try execution_payload.newPayloadV2Handler(&ep, std.testing.allocator);
+    defer ep.deinit(std.testing.allocator);
+    try execution_payload.newPayloadV2Handler(&ep);
 }

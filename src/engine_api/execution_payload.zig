@@ -1,5 +1,8 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
+const lib = @import("../lib.zig");
+const blockchain = lib.blockchain;
+const state = lib.state;
 const Allocator = std.mem.Allocator;
 const BlockHeader = types.BlockHeader;
 const Withdrawal = types.Withdrawal;
@@ -62,16 +65,15 @@ pub const ExecutionPayload = struct {
     }
 };
 
-pub fn newPayloadV2Handler(params: *ExecutionPayload, allocator: std.mem.Allocator) !void {
+pub fn newPayloadV2Handler(params: *ExecutionPayload) !void {
+    const block = params.toBlock();
+    _ = block;
     // TODO reconstruct the proof from the (currently undefined) execution witness
     // and verify it. Then execute the block and return the result.
-    // vm.run_block(params.to_block(), params.transactions);
+    // bc.run_block(block, params.transactions);
 
     // But so far, just print the content of the payload
     // std.log.info("newPayloadV2Handler: {any}", .{params});
 
-    const block = params.toBlock();
-    _ = block;
     // std.debug.print("block number={}\n", .{block.header.block_number});
-    params.deinit(allocator);
 }

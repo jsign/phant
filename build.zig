@@ -111,6 +111,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
     exe.root_module.addImport("httpz", mod_httpz);
     exe.root_module.addImport("simargs", zigcli.module("simargs"));
+    exe.root_module.addImport("pretty-table", zigcli.module("pretty-table"));
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -163,6 +164,7 @@ pub fn build(b: *std.Build) void {
     unit_tests.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
     unit_tests.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
+    unit_tests.root_module.addImport("pretty-table", zigcli.module("pretty-table"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;
