@@ -5,6 +5,31 @@ const LazyPath = std.Build.LazyPath;
 // declaratively construct a build graph that will be executed by an external
 // runner.
 pub fn build(b: *std.Build) void {
+    const version_file_path = "src/version.zig";
+
+    var version_file = std.fs.cwd().createFile(version_file_path, .{}) catch |err| {
+        std.debug.print("Unable to create version file: {any}", .{err});
+        std.process.exit(1);
+    };
+    defer version_file.close();
+
+    var returncode:u8=undefined;
+    const git_run = b.runAllowFail(&[_][]const u8{
+        "git",
+        "rev-parse",
+        "--short",
+        "HEAD",
+    }, &returncode, .Ignore) catch v: { break :v "unstable";};
+    const git_rev = std.mem.trim(u8, git_run, " \t\n\r");
+
+    version_file.writeAll(b.fmt(
+        \\pub const version = "{s}";
+        , .{git_rev}
+    )) catch |err| {
+        std.debug.print("Unable to write version file: {any}", .{err});
+        std.process.exit(1);
+    };
+
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options

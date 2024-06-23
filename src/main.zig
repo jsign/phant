@@ -15,6 +15,7 @@ const httpz = @import("httpz");
 const engine_api = @import("engine_api/engine_api.zig");
 const json = std.json;
 const simargs = @import("simargs");
+const version = @import("version.zig").version;
 
 fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
     if (try req.json(engine_api.EngineAPIRequest)) |payload| {
@@ -53,7 +54,7 @@ pub fn main() !void {
 
     // TODO print usage upon failure (requires upstream changes)
     // TODO generate version from build and add it here
-    const opts = try simargs.parse(gpa.allocator(), PhantArgs, "", null);
+    const opts = try simargs.parse(gpa.allocator(), PhantArgs, "", version);
     defer opts.deinit();
 
     const port: u16 = if (opts.args.engine_api_port == null) 8551 else opts.args.engine_api_port.?;
@@ -70,6 +71,7 @@ pub fn main() !void {
     }
 
     std.log.info("Welcome to phant! 🐘", .{});
+    std.log.info("version: {s}", .{version});
     try config.dump(allocator);
 
     var engine_api_server = try httpz.Server().init(allocator, .{
