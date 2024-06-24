@@ -13,19 +13,20 @@ pub fn build(b: *std.Build) void {
     };
     defer version_file.close();
 
-    var returncode:u8=undefined;
+    var returncode: u8 = undefined;
     const git_run = b.runAllowFail(&[_][]const u8{
         "git",
         "rev-parse",
         "--short",
         "HEAD",
-    }, &returncode, .Ignore) catch v: { break :v "unstable";};
+    }, &returncode, .Ignore) catch v: {
+        break :v "unstable";
+    };
     const git_rev = std.mem.trim(u8, git_run, " \t\n\r");
 
     version_file.writeAll(b.fmt(
         \\pub const version = "{s}";
-        , .{git_rev}
-    )) catch |err| {
+    , .{git_rev})) catch |err| {
         std.debug.print("Unable to write version file: {any}", .{err});
         std.process.exit(1);
     };
