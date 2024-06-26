@@ -1,18 +1,35 @@
 const std = @import("std");
 const LazyPath = std.Build.LazyPath;
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
-pub fn build(b: *std.Build) void {
-    const version_file_path = "src/version.zig";
-
-    var version_file = std.fs.cwd().createFile(version_file_path, .{}) catch |err| {
-        std.debug.print("Unable to create version file: {any}", .{err});
+// extract version string from build.zig.zon. The zon parser hasn't been merged
+// into the std yet as of zig 0.13.0.
+fn extractVersionFromZon(allocator: std.mem.Allocator) []const u8 {
+    var build_zon_file = std.fs.cwd().openFile("build.zig.zon", .{}) catch |err| {
+        std.debug.print("Unable to read build.zig.zon: {any}", .{err});
         std.process.exit(1);
     };
-    defer version_file.close();
+    const build_zon_stat = build_zon_file.stat() catch |err| {
+        std.debug.print("Unable to stat build.zig.zon: {any}", .{err});
+        std.process.exit(1);
+    };
+    const build_zon = build_zon_file.readToEndAlloc(allocator, build_zon_stat.size) catch |err| {
+        std.debug.print("Unable to read build.zig.zon: {any}", .{err});
+        std.process.exit(1);
+    };
+    const version_start = std.mem.indexOf(u8, build_zon, ".version = \"");
+    if (version_start == null) {
+        std.debug.print("Unable to find version string in build.zig.zon", .{});
+        std.process.exit(1);
+    }
+    const version_end = std.mem.indexOf(u8, build_zon[version_start.? + 12 ..], "\"");
+    if (version_end == null) {
+        std.debug.print("Unable to find end of version string in build.zig.zon", .{});
+        std.process.exit(1);
+    }
+    return build_zon[version_start.? + 12 .. version_start.? + 12 + version_end.?];
+}
 
+fn gitRevision(b: *std.Build) []const u8 {
     var returncode: u8 = undefined;
     const git_run = b.runAllowFail(&[_][]const u8{
         "git",
@@ -22,11 +39,32 @@ pub fn build(b: *std.Build) void {
     }, &returncode, .Ignore) catch v: {
         break :v "unstable";
     };
-    const git_rev = std.mem.trim(u8, git_run, " \t\n\r");
+    return std.mem.trim(u8, git_run, " \t\n\r");
+}
+
+// Although this function looks imperative, note that its job is to
+// declaratively construct a build graph that will be executed by an external
+// runner.
+pub fn build(b: *std.Build) void {
+    const version_file_path = "src/version.zig";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const version = extractVersionFromZon(allocator);
+
+    var version_file = std.fs.cwd().createFile(version_file_path, .{}) catch |err| {
+        std.debug.print("Unable to create version file: {any}", .{err});
+        std.process.exit(1);
+    };
+    defer version_file.close();
+
+    const git_rev = gitRevision(b);
 
     version_file.writeAll(b.fmt(
-        \\pub const version = "{s}";
-    , .{git_rev})) catch |err| {
+        \\pub const version = "{s}+{s}";
+    , .{ version, git_rev })) catch |err| {
         std.debug.print("Unable to write version file: {any}", .{err});
         std.process.exit(1);
     };
