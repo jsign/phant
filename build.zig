@@ -3,30 +3,21 @@ const LazyPath = std.Build.LazyPath;
 
 // extract version string from build.zig.zon. The zon parser hasn't been merged
 // into the std yet as of zig 0.13.0.
-fn extractVersionFromZon(allocator: std.mem.Allocator) []const u8 {
-    var build_zon_file = std.fs.cwd().openFile("build.zig.zon", .{}) catch |err| {
-        std.debug.print("Unable to read build.zig.zon: {any}", .{err});
-        std.process.exit(1);
-    };
-    const build_zon_stat = build_zon_file.stat() catch |err| {
-        std.debug.print("Unable to stat build.zig.zon: {any}", .{err});
-        std.process.exit(1);
-    };
-    const build_zon = build_zon_file.readToEndAlloc(allocator, build_zon_stat.size) catch |err| {
-        std.debug.print("Unable to read build.zig.zon: {any}", .{err});
-        std.process.exit(1);
-    };
-    const version_start = std.mem.indexOf(u8, build_zon, ".version = \"");
+fn extractVersionFromZon(allocator: std.mem.Allocator) ![]const u8 {
+    const version_field_decl = ".version = \"";
+    var build_zon_file = try std.fs.cwd().openFile("build.zig.zon", .{});
+    const build_zon_stat = try build_zon_file.stat();
+    const build_zon = try build_zon_file.readToEndAlloc(allocator, build_zon_stat.size);
+    const version_start = std.mem.indexOf(u8, build_zon, version_field_decl);
     if (version_start == null) {
-        std.debug.print("Unable to find version string in build.zig.zon", .{});
-        std.process.exit(1);
+        return error.CantFindVersionFieldStart;
     }
-    const version_end = std.mem.indexOf(u8, build_zon[version_start.? + 12 ..], "\"");
+    const version_offset = version_start.? + version_field_decl.len;
+    const version_end = std.mem.indexOf(u8, build_zon[version_offset..], "\"");
     if (version_end == null) {
-        std.debug.print("Unable to find end of version string in build.zig.zon", .{});
-        std.process.exit(1);
+        return error.CantFindVersionFieldEnd;
     }
-    return build_zon[version_start.? + 12 .. version_start.? + 12 + version_end.?];
+    return build_zon[version_offset .. version_offset + version_end.?];
 }
 
 fn gitRevision(b: *std.Build) []const u8 {
@@ -45,29 +36,23 @@ fn gitRevision(b: *std.Build) []const u8 {
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const version_file_path = "src/version.zig";
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const version = extractVersionFromZon(allocator);
+    const version = try extractVersionFromZon(allocator);
 
-    var version_file = std.fs.cwd().createFile(version_file_path, .{}) catch |err| {
-        std.debug.print("Unable to create version file: {any}", .{err});
-        std.process.exit(1);
-    };
+    var version_file = try std.fs.cwd().createFile(version_file_path, .{});
     defer version_file.close();
 
     const git_rev = gitRevision(b);
 
-    version_file.writeAll(b.fmt(
+    try version_file.writeAll(b.fmt(
         \\pub const version = "{s}+{s}";
-    , .{ version, git_rev })) catch |err| {
-        std.debug.print("Unable to write version file: {any}", .{err});
-        std.process.exit(1);
-    };
+    , .{ version, git_rev }));
 
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
