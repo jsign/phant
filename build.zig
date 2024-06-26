@@ -1,10 +1,59 @@
 const std = @import("std");
 const LazyPath = std.Build.LazyPath;
 
+// extract version string from build.zig.zon. The zon parser hasn't been merged
+// into the std yet as of zig 0.13.0.
+fn extractVersionFromZon(allocator: std.mem.Allocator) ![]const u8 {
+    const version_field_decl = ".version = \"";
+    var build_zon_file = try std.fs.cwd().openFile("build.zig.zon", .{});
+    const build_zon_stat = try build_zon_file.stat();
+    const build_zon = try build_zon_file.readToEndAlloc(allocator, build_zon_stat.size);
+    const version_start = std.mem.indexOf(u8, build_zon, version_field_decl);
+    if (version_start == null) {
+        return error.CantFindVersionFieldStart;
+    }
+    const version_offset = version_start.? + version_field_decl.len;
+    const version_end = std.mem.indexOf(u8, build_zon[version_offset..], "\"");
+    if (version_end == null) {
+        return error.CantFindVersionFieldEnd;
+    }
+    return build_zon[version_offset .. version_offset + version_end.?];
+}
+
+fn gitRevision(b: *std.Build) []const u8 {
+    var returncode: u8 = undefined;
+    const git_run = b.runAllowFail(&[_][]const u8{
+        "git",
+        "rev-parse",
+        "--short",
+        "HEAD",
+    }, &returncode, .Ignore) catch v: {
+        break :v "unstable";
+    };
+    return std.mem.trim(u8, git_run, " \t\n\r");
+}
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
+    const version_file_path = "src/version.zig";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const version = try extractVersionFromZon(allocator);
+
+    var version_file = try std.fs.cwd().createFile(version_file_path, .{});
+    defer version_file.close();
+
+    const git_rev = gitRevision(b);
+
+    try version_file.writeAll(b.fmt(
+        \\pub const version = "{s}+{s}";
+    , .{ version, git_rev }));
+
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
