@@ -9,21 +9,24 @@ const Address = types.Address;
 const VM = @import("blockchain/vm.zig").VM;
 const StateDB = @import("state/state.zig").StateDB;
 const Block = types.Block;
+const BlockHeader = types.BlockHeader;
 const Tx = types.Tx;
 const TxSigner = @import("signer/signer.zig").TxSigner;
+const Hash32 = types.Hash32;
 const httpz = @import("httpz");
 const engine_api = @import("engine_api/engine_api.zig");
 const json = std.json;
 const simargs = @import("simargs");
 const version = @import("version.zig").version;
+const Blockchain = lib.blockchain.Blockchain;
 
-fn engineAPIHandler(req: *httpz.Request, res: *httpz.Response) !void {
+fn engineAPIHandler(blockchain: *Blockchain, req: *httpz.Request, res: *httpz.Response) !void {
     if (try req.json(engine_api.EngineAPIRequest)) |payload| {
         if (std.mem.eql(u8, payload.method, "engine_newPayloadV2")) {
             const execution_payload_json = payload.params[0];
             var execution_payload = try execution_payload_json.to_execution_payload(res.arena);
             defer execution_payload.deinit(res.arena);
-            try engine_api.execution_payload.newPayloadV2Handler(&execution_payload);
+            try engine_api.execution_payload.newPayloadV2Handler(blockchain, &execution_payload);
         } else {
             res.status = 500;
         }
@@ -74,9 +77,32 @@ pub fn main() !void {
     std.log.info("version: {s}", .{version});
     try config.dump(allocator);
 
-    var engine_api_server = try httpz.Server().init(allocator, .{
+    var statedb = try StateDB.init(allocator, &[0]AccountState{});
+    defer statedb.deinit();
+    const parent_header = BlockHeader{
+        .parent_hash = [_]u8{0} ** 32,
+        .uncle_hash = types.empty_uncle_hash,
+        .fee_recipient = [_]u8{0} ** 20,
+        .state_root = [_]u8{0} ** 32,
+        .transactions_root = [_]u8{0} ** 32,
+        .receipts_root = [_]u8{0} ** 32,
+        .logs_bloom = [_]u8{0} ** 256,
+        .difficulty = 0,
+        .block_number = 0,
+        .gas_limit = 0,
+        .gas_used = 0,
+        .timestamp = 0,
+        .extra_data = &[_]u8{},
+        .prev_randao = [_]u8{0} ** 32,
+        .nonce = [_]u8{0} ** 8,
+        .base_fee_per_gas = 0,
+        .withdrawals_root = [_]u8{0} ** 32,
+    };
+    var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, [_]Hash32{[_]u8{0} ** 32} ** 256);
+
+    var engine_api_server = try httpz.ServerApp(*Blockchain).init(allocator, .{
         .port = port,
-    });
+    }, &blockchain);
     var router = engine_api_server.router();
     router.post("/", engineAPIHandler);
     std.log.info("Listening on {}", .{port});

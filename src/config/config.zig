@@ -16,7 +16,7 @@ pub const ChainId = enum(u64) {
 
 pub const ChainConfig = struct {
     ChainName: []const u8,
-    chainId: u64 = @intFromEnum(ChainId.Mainnet),
+    chainId: ChainId = ChainId.Mainnet,
     homesteadBlock: ?u64 = null,
     daoForkBlock: ?u64 = null,
     eip150Block: ?u64 = null,
