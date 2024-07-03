@@ -85,15 +85,44 @@ pub const EngineAPIRequest = struct {
 test "deserialize sample engine_newPayloadV2" {
     const json = std.json;
     const expect = std.testing.expect;
+    const lib = @import("./../lib.zig");
+    const StateDB = lib.state.StateDB;
+    const Blockchain = lib.blockchain.Blockchain;
+    const AccountState = lib.state.AccountState;
+    const BlockHeader = lib.blockchain.BlockHeader;
+    const Hash32 = lib.types.Hash32;
 
     const fileContent = @embedFile("./test_req.json");
 
     const payload = try json.parseFromSlice(EngineAPIRequest, std.testing.allocator, fileContent, .{ .ignore_unknown_fields = true });
     defer payload.deinit();
 
+    var statedb = try StateDB.init(std.testing.allocator, &[0]AccountState{});
+    defer statedb.deinit();
+    const parent_header = BlockHeader{
+        .parent_hash = [_]u8{0} ** 32,
+        .uncle_hash = types.empty_uncle_hash,
+        .fee_recipient = [_]u8{0} ** 20,
+        .state_root = [_]u8{0} ** 32,
+        .transactions_root = [_]u8{0} ** 32,
+        .receipts_root = [_]u8{0} ** 32,
+        .logs_bloom = [_]u8{0} ** 256,
+        .difficulty = 0,
+        .block_number = 0,
+        .gas_limit = 0x1c9c380,
+        .gas_used = 0,
+        .timestamp = 0,
+        .extra_data = &[_]u8{},
+        .prev_randao = [_]u8{0} ** 32,
+        .nonce = [_]u8{0} ** 8,
+        .base_fee_per_gas = 7,
+        .withdrawals_root = [_]u8{0} ** 32,
+    };
+    var blockchain = try Blockchain.init(std.testing.allocator, .Testing, &statedb, parent_header, [_]Hash32{[_]u8{0} ** 32} ** 256);
+
     try expect(std.mem.eql(u8, payload.value.method, "engine_newPayloadV2"));
     const execution_payload_json = payload.value.params[0];
     var ep = try execution_payload_json.to_execution_payload(std.testing.allocator);
     defer ep.deinit(std.testing.allocator);
-    try execution_payload.newPayloadV2Handler(&ep);
+    try execution_payload.newPayloadV2Handler(&blockchain, &ep);
 }
