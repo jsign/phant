@@ -4,7 +4,7 @@
   "method": "engine_newPayloadV2",
   "params": [
     {
-      "parentHash": "0x522930864dc2f6569f4d4b92f40001fe6752727ff53db5cb5c5ffd51d3cc53e4",
+      "parentHash": "0xf725aca23ac424e82c9e75b78915bc533a4d4be2ced7c57f0f5885c5ac8e03d5",
       "feeRecipient": "0xf97e180c050e5ab072211ad2c213eb5aee4df134",
       "stateRoot": "0x27bb13dc19c41288dd29236b27baac49338c466b8c0eb44fb4c0c0083dfb214a",
       "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",

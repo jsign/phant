@@ -91,13 +91,15 @@ test "deserialize sample engine_newPayloadV2" {
     const AccountState = lib.state.AccountState;
     const BlockHeader = lib.blockchain.BlockHeader;
     const Hash32 = lib.types.Hash32;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
 
     const fileContent = @embedFile("./test_req.json");
 
-    const payload = try json.parseFromSlice(EngineAPIRequest, std.testing.allocator, fileContent, .{ .ignore_unknown_fields = true });
+    const payload = try json.parseFromSlice(EngineAPIRequest, arena.allocator(), fileContent, .{ .ignore_unknown_fields = true });
     defer payload.deinit();
 
-    var statedb = try StateDB.init(std.testing.allocator, &[0]AccountState{});
+    var statedb = try StateDB.init(arena.allocator(), &[0]AccountState{});
     defer statedb.deinit();
     const parent_header = BlockHeader{
         .parent_hash = [_]u8{0} ** 32,
@@ -118,11 +120,11 @@ test "deserialize sample engine_newPayloadV2" {
         .base_fee_per_gas = 7,
         .withdrawals_root = [_]u8{0} ** 32,
     };
-    var blockchain = try Blockchain.init(std.testing.allocator, .Testing, &statedb, parent_header, [_]Hash32{[_]u8{0} ** 32} ** 256);
+    var blockchain = try Blockchain.init(arena.allocator(), .Testing, &statedb, parent_header, [_]Hash32{[_]u8{0} ** 32} ** 256);
 
     try expect(std.mem.eql(u8, payload.value.method, "engine_newPayloadV2"));
     const execution_payload_json = payload.value.params[0];
-    var ep = try execution_payload_json.to_execution_payload(std.testing.allocator);
-    defer ep.deinit(std.testing.allocator);
+    var ep = try execution_payload_json.to_execution_payload(arena.allocator());
+    defer ep.deinit(arena.allocator());
     try execution_payload.newPayloadV2Handler(&blockchain, &ep);
 }
