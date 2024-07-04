@@ -32,6 +32,20 @@ pub const ExecutionPayload = struct {
     allocator: Allocator,
 
     pub fn toBlock(self: *const ExecutionPayload) types.Block {
+        var withdrawals = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
+        defer withdrawals.deinit();
+        for (self.withdrawals, 0..) |w, index| {
+            var key = [_]u8{0} ** 32;
+            std.mem.writeInt(usize, key[24..], index, .big);
+            try withdrawals.append(lib.mpt.KeyVal.init(self.allocator, &key, try w.encode(self.allocator)));
+        }
+        var transactions = std.ArrayList(lib.mpt.KeyVal);
+        defer transactions.deinit();
+        for (self.transactions, 0..) |tx, index| {
+            var key = [_]u8{0} ** 32;
+            std.mem.writeInt(usize, key[24..], index, .big);
+            try transactions.append(lib.mpt.KeyVal.init(self.allocator, &key, tx.encode(self.allocator)));
+        }
         return types.Block{
             .header = types.BlockHeader{
                 .parent_hash = self.parentHash,
@@ -48,9 +62,9 @@ pub const ExecutionPayload = struct {
                 .timestamp = @intCast(self.timestamp),
                 .extra_data = self.extraData,
                 .base_fee_per_gas = self.baseFeePerGas,
-                .transactions_root = lib.mpt.empty_mpt_root,
+                .transactions_root = try lib.mpt.mptize(self.allocator, transactions.items[0..]),
                 .nonce = [_]u8{0} ** 8,
-                .withdrawals_root = lib.mpt.empty_mpt_root,
+                .withdrawals_root = try lib.mpt.mptize(self.allocator, withdrawals.items[0..]),
             },
             .transactions = self.transactions,
             .withdrawals = self.withdrawals,
