@@ -44,7 +44,7 @@ pub const Tx = union(TxTypes) {
     }
 
     // encode encodes a transaction to RLP. The caller is responsible for freeing the returned bytes.
-    pub fn encode(self: *Tx, arena: Allocator) ![]const u8 {
+    pub fn encode(self: *const Tx, arena: Allocator) ![]const u8 {
         var list = ArrayList(u8).init(arena);
         defer list.deinit();
         switch (self.*) {
