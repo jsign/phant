@@ -1,6 +1,7 @@
 const types = @import("../types/types.zig");
 const config = @import("../config/config.zig");
 const common = @import("../common/common.zig");
+const Fork = @import("fork.zig");
 const StateDB = @import("../state/state.zig").StateDB;
 const Address = types.Address;
 const Hash32 = types.Hash32;
@@ -10,7 +11,7 @@ const AddresssKey = common.AddressKey;
 const AddressKeySet = common.AddressKeySet;
 
 pub const Environment = struct {
-    block_hashes: [256]Hash32,
+    fork: *Fork,
     origin: Address,
     coinbase: Address,
     number: u64,

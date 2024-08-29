@@ -19,6 +19,7 @@ const json = std.json;
 const simargs = @import("simargs");
 const version = @import("version.zig").version;
 const Blockchain = lib.blockchain.Blockchain;
+const Fork = lib.blockchain.Fork;
 
 fn engineAPIHandler(blockchain: *Blockchain, req: *httpz.Request, res: *httpz.Response) !void {
     if (try req.json(engine_api.EngineAPIRequest)) |payload| {
@@ -98,7 +99,7 @@ pub fn main() !void {
         .base_fee_per_gas = 0,
         .withdrawals_root = [_]u8{0} ** 32,
     };
-    var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, [_]Hash32{[_]u8{0} ** 32} ** 256);
+    var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, Fork.base.fork);
 
     var engine_api_server = try httpz.ServerApp(*Blockchain).init(allocator, .{
         .port = port,

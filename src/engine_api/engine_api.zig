@@ -6,6 +6,8 @@ const Allocator = std.mem.Allocator;
 const Withdrawal = types.Withdrawal;
 const Tx = types.Tx;
 const ExecutionPayload = execution_payload.ExecutionPayload;
+const lib = @import("../lib.zig");
+const Fork = lib.blockchain.Fork;
 
 pub const execution_payload = @import("execution_payload.zig");
 
@@ -85,21 +87,19 @@ pub const EngineAPIRequest = struct {
 test "deserialize sample engine_newPayloadV2" {
     const json = std.json;
     const expect = std.testing.expect;
-    const lib = @import("./../lib.zig");
     const StateDB = lib.state.StateDB;
     const Blockchain = lib.blockchain.Blockchain;
     const AccountState = lib.state.AccountState;
     const BlockHeader = lib.blockchain.BlockHeader;
-    const Hash32 = lib.types.Hash32;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
+    const allocator = arena.allocator();
 
     const fileContent = @embedFile("./test_req.json");
-
-    const payload = try json.parseFromSlice(EngineAPIRequest, arena.allocator(), fileContent, .{ .ignore_unknown_fields = true });
+    const payload = try json.parseFromSlice(EngineAPIRequest, allocator, fileContent, .{ .ignore_unknown_fields = true });
     defer payload.deinit();
 
-    var statedb = try StateDB.init(arena.allocator(), &[0]AccountState{});
+    var statedb = try StateDB.init(allocator, &[0]AccountState{});
     defer statedb.deinit();
     const parent_header = BlockHeader{
         .parent_hash = [_]u8{0} ** 32,
@@ -120,11 +120,13 @@ test "deserialize sample engine_newPayloadV2" {
         .base_fee_per_gas = 7,
         .withdrawals_root = [_]u8{0} ** 32,
     };
-    var blockchain = try Blockchain.init(arena.allocator(), .Testing, &statedb, parent_header, [_]Hash32{[_]u8{0} ** 32} ** 256);
+    // TODO pick the fork based on chain config + block number + time stamp
+    const base_fork = lib.blockchain.Fork.base.newBaseFork(allocator);
+    var blockchain = try Blockchain.init(allocator, .Testing, &statedb, parent_header, base_fork);
 
     try expect(std.mem.eql(u8, payload.value.method, "engine_newPayloadV2"));
     const execution_payload_json = payload.value.params[0];
-    var ep = try execution_payload_json.to_execution_payload(arena.allocator());
-    defer ep.deinit(arena.allocator());
+    var ep = try execution_payload_json.to_execution_payload(allocator);
+    defer ep.deinit(allocator);
     try execution_payload.newPayloadV2Handler(&blockchain, &ep);
 }
