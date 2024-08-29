@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("../types/types.zig");
 const lib = @import("../lib.zig");
-const blockchain = lib.blockchain;
+const Blockchain = lib.blockchain.Blockchain;
 const state = lib.state;
 const Allocator = std.mem.Allocator;
 const BlockHeader = types.BlockHeader;
@@ -31,7 +31,21 @@ pub const ExecutionPayload = struct {
 
     allocator: Allocator,
 
-    pub fn toBlock(self: *const ExecutionPayload) types.Block {
+    pub fn toBlock(self: *const ExecutionPayload) !types.Block {
+        var withdrawals = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
+        defer withdrawals.deinit();
+        for (self.withdrawals, 0..) |w, index| {
+            var key = [_]u8{0} ** 32;
+            std.mem.writeInt(usize, key[24..], index, .big);
+            try withdrawals.append(try lib.mpt.KeyVal.init(self.allocator, &key, try w.encode(self.allocator)));
+        }
+        var transactions = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
+        defer transactions.deinit();
+        for (self.transactions, 0..) |tx, index| {
+            var key = [_]u8{0} ** 32;
+            std.mem.writeInt(usize, key[24..], index, .big);
+            try transactions.append(try lib.mpt.KeyVal.init(self.allocator, &key, try tx.encode(self.allocator)));
+        }
         return types.Block{
             .header = types.BlockHeader{
                 .parent_hash = self.parentHash,
@@ -48,9 +62,9 @@ pub const ExecutionPayload = struct {
                 .timestamp = @intCast(self.timestamp),
                 .extra_data = self.extraData,
                 .base_fee_per_gas = self.baseFeePerGas,
-                .transactions_root = [_]u8{0} ** 32,
+                .transactions_root = try lib.mpt.mptize(self.allocator, transactions.items[0..]),
                 .nonce = [_]u8{0} ** 8,
-                .withdrawals_root = [_]u8{0} ** 32,
+                .withdrawals_root = try lib.mpt.mptize(self.allocator, withdrawals.items[0..]),
             },
             .transactions = self.transactions,
             .withdrawals = self.withdrawals,
@@ -65,15 +79,11 @@ pub const ExecutionPayload = struct {
     }
 };
 
-pub fn newPayloadV2Handler(params: *ExecutionPayload) !void {
-    const block = params.toBlock();
-    _ = block;
+pub fn newPayloadV2Handler(blockchain: *Blockchain, params: *ExecutionPayload) !void {
+    const block = try params.toBlock();
     // TODO reconstruct the proof from the (currently undefined) execution witness
-    // and verify it. Then execute the block and return the result.
-    // bc.run_block(block, params.transactions);
+    // and verify it.
 
-    // But so far, just print the content of the payload
-    // std.log.info("newPayloadV2Handler: {any}", .{params});
-
-    // std.debug.print("block number={}\n", .{block.header.block_number});
+    // Then execute the block and return the result.
+    return blockchain.runBlock(block);
 }
