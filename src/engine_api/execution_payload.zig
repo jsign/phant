@@ -31,20 +31,20 @@ pub const ExecutionPayload = struct {
 
     allocator: Allocator,
 
-    pub fn toBlock(self: *const ExecutionPayload) types.Block {
+    pub fn toBlock(self: *const ExecutionPayload) !types.Block {
         var withdrawals = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
         defer withdrawals.deinit();
         for (self.withdrawals, 0..) |w, index| {
             var key = [_]u8{0} ** 32;
             std.mem.writeInt(usize, key[24..], index, .big);
-            try withdrawals.append(lib.mpt.KeyVal.init(self.allocator, &key, try w.encode(self.allocator)));
+            try withdrawals.append(try lib.mpt.KeyVal.init(self.allocator, &key, try w.encode(self.allocator)));
         }
-        var transactions = std.ArrayList(lib.mpt.KeyVal);
+        var transactions = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
         defer transactions.deinit();
         for (self.transactions, 0..) |tx, index| {
             var key = [_]u8{0} ** 32;
             std.mem.writeInt(usize, key[24..], index, .big);
-            try transactions.append(lib.mpt.KeyVal.init(self.allocator, &key, tx.encode(self.allocator)));
+            try transactions.append(try lib.mpt.KeyVal.init(self.allocator, &key, try tx.encode(self.allocator)));
         }
         return types.Block{
             .header = types.BlockHeader{
@@ -80,7 +80,7 @@ pub const ExecutionPayload = struct {
 };
 
 pub fn newPayloadV2Handler(blockchain: *Blockchain, params: *ExecutionPayload) !void {
-    const block = params.toBlock();
+    const block = try params.toBlock();
     // TODO reconstruct the proof from the (currently undefined) execution witness
     // and verify it.
 
