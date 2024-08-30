@@ -11,7 +11,7 @@ pub fn decodeRLP(comptime T: type, arena: Allocator, bytes: []const u8) !T {
     return ret;
 }
 
-pub fn decodeRLPAndHash(comptime T: type, allocator: Allocator, value: T, prefix: ?[]const u8) !Hash32 {
+pub fn encodeToRLPAndHash(comptime T: type, allocator: Allocator, value: T, prefix: ?[]const u8) !Hash32 {
     var out = std.ArrayList(u8).init(allocator);
     defer out.deinit();
     try rlp.serialize(T, allocator, value, &out);
