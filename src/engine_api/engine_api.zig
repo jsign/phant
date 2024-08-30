@@ -120,8 +120,9 @@ test "deserialize sample engine_newPayloadV2" {
         .base_fee_per_gas = 7,
         .withdrawals_root = [_]u8{0} ** 32,
     };
-    // TODO pick the fork based on chain config + block number + time stamp
-    const base_fork = lib.blockchain.Fork.base.newBaseFork(allocator);
+    // TODO pick the fork based on chain config + block number + timestamp
+    const base_fork = try lib.blockchain.Fork.base.newBaseFork(allocator);
+    defer base_fork.deinit();
     var blockchain = try Blockchain.init(allocator, .Testing, &statedb, parent_header, base_fork);
 
     try expect(std.mem.eql(u8, payload.value.method, "engine_newPayloadV2"));

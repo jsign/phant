@@ -12,6 +12,7 @@ var state_db: ?*StateDB = null;
 const vtable = Fork.VTable{
     .update_parent_block_hash = update_parent_block_hash,
     .get_parent_block_hash = get_parent_block_hash,
+    .deinit = deinit,
 };
 
 fn update_parent_block_hash(_: *Fork, num: u64, hash: Hash32) anyerror!void {
@@ -39,3 +40,5 @@ pub fn enablePrague(_: *StateDB, _: *Fork) Fork {
         .vtable = &vtable,
     };
 }
+
+fn deinit(_: *Fork) void {}
