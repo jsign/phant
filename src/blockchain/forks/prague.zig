@@ -45,4 +45,13 @@ pub fn enablePrague(state_db: *StateDB, _: ?*Fork, allocator: std.mem.Allocator)
     return &prague_fork.fork;
 }
 
-fn deinit(_: *Fork) void {}
+fn deinit(self: *Fork) void {
+    const prague_fork: *PragueFork = @fieldParentPtr("fork", self);
+    prague_fork.allocator.destroy(prague_fork);
+}
+
+// a helper function to deploy the 2935 contract on a testnet.
+pub fn deployContract(self: *Fork) !void {
+    const prague_fork: *PragueFork = @fieldParentPtr("fork", self);
+    try prague_fork.state_db.db.put(system_addr, try lib.state.AccountState.init(prague_fork.allocator, system_addr, 1, 0, &[0]u8{}));
+}
