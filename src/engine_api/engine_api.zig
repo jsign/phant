@@ -121,7 +121,7 @@ test "deserialize sample engine_newPayloadV2" {
         .withdrawals_root = [_]u8{0} ** 32,
     };
     // TODO pick the fork based on chain config + block number + timestamp
-    const base_fork = try lib.blockchain.Fork.base.newBaseFork(allocator);
+    const base_fork = try Fork.base.newBaseFork(allocator);
     defer base_fork.deinit();
     var blockchain = try Blockchain.init(allocator, .Testing, &statedb, parent_header, base_fork);
 
