@@ -183,7 +183,7 @@ pub const LegacyTx = struct {
     pub fn hash(self: LegacyTx, allocator: Allocator) !Hash32 {
         // TODO: consider caching the calculated txHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
-        return try common.decodeRLPAndHash(LegacyTx, allocator, self, null);
+        return try common.encodeToRLPAndHash(LegacyTx, allocator, self, null);
     }
 
     pub fn setSignature(self: *LegacyTx, v: u256, r: u256, s: u256) void {
@@ -224,7 +224,7 @@ pub const AccessListTx = struct {
         // TODO: consider caching the calculated txHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
         const prefix = [_]u8{@intFromEnum(TxTypes.AccessListTx)};
-        return try common.decodeRLPAndHash(AccessListTx, allocator, self, &prefix);
+        return try common.encodeToRLPAndHash(AccessListTx, allocator, self, &prefix);
     }
 
     pub fn setSignature(self: *AccessListTx, v: u256, r: u256, s: u256) void {
@@ -257,7 +257,7 @@ pub const FeeMarketTx = struct {
         // TODO: consider caching the calculated txHash to avoid further
         // allocations and keccaking. But be careful since struct fields are public.
         const prefix = [_]u8{@intFromEnum(TxTypes.FeeMarketTx)};
-        return try common.decodeRLPAndHash(FeeMarketTx, allocator, self, &prefix);
+        return try common.encodeToRLPAndHash(FeeMarketTx, allocator, self, &prefix);
     }
 
     pub fn setSignature(self: *FeeMarketTx, v: u256, r: u256, s: u256) void {

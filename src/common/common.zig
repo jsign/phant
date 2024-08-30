@@ -18,7 +18,7 @@ pub const AddressKeySet = std.AutoHashMap(AddressKey, void);
 
 // RLP
 pub const decodeRLP = rlp.decodeRLP;
-pub const decodeRLPAndHash = rlp.decodeRLPAndHash;
+pub const encodeToRLPAndHash = rlp.encodeToRLPAndHash;
 
 // Address
 pub const computeCREATEContractAddress = contract.computeCREATEContractAddress;

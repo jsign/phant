@@ -89,7 +89,7 @@ pub const Blockchain = struct {
         // TODO: this can be done more efficiently with some ring buffer to avoid copying the slice
         // to make room for the new block hash.
         std.mem.copyForwards(Hash32, &self.last_256_blocks_hashes, self.last_256_blocks_hashes[1..255]);
-        self.last_256_blocks_hashes[255] = try common.decodeRLPAndHash(BlockHeader, allocator, block.header, null);
+        self.last_256_blocks_hashes[255] = try common.encodeToRLPAndHash(BlockHeader, allocator, block.header, null);
 
         // Note that we free and clone with the Blockchain allocator, and not the arena allocator.
         // This is required since Blockchain field lifetimes are longer than the block execution processing.
@@ -134,7 +134,7 @@ pub const Blockchain = struct {
         if (!std.mem.eql(u8, &curr_block.uncle_hash, &blocks.empty_uncle_hash))
             return error.InvalidUnclesHash;
 
-        const prev_block_hash = try common.decodeRLPAndHash(BlockHeader, allocator, prev_block, null);
+        const prev_block_hash = try common.encodeToRLPAndHash(BlockHeader, allocator, prev_block, null);
         if (!std.mem.eql(u8, &curr_block.parent_hash, &prev_block_hash))
             return error.InvalidParentHash;
     }
