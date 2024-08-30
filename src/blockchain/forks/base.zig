@@ -46,7 +46,7 @@ fn get_parent_block_hash(self: *Fork, block_num: u64) !Hash32 {
 }
 
 pub fn newBaseFork(allocator: std.mem.Allocator) !*Fork {
-    var base_fork = allocator.create(BaseFork) catch @panic("could not allocate fork");
+    var base_fork = try allocator.create(BaseFork);
     base_fork.init();
     base_fork.allocator = allocator;
     return &base_fork.fork;
