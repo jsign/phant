@@ -1,7 +1,7 @@
 const lib = @import("../lib.zig");
 const Hash32 = lib.types.Hash32;
 const Fork = @This();
-pub const base = @import("./forks/base.zig");
+pub const frontier = @import("./forks/frontier.zig");
 pub const prague = @import("./forks/prague.zig");
 
 vtable: *const VTable,

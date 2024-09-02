@@ -99,7 +99,7 @@ pub fn main() !void {
         .base_fee_per_gas = 0,
         .withdrawals_root = [_]u8{0} ** 32,
     };
-    var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, try Fork.base.newBaseFork(allocator));
+    var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, try Fork.frontier.newFrontierFork(allocator));
 
     var engine_api_server = try httpz.ServerApp(*Blockchain).init(allocator, .{
         .port = port,

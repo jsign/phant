@@ -9,7 +9,7 @@ const base_fork_vtable = Fork.VTable{
     .deinit = deinit,
 };
 
-const BaseFork = struct {
+const FrontierFork = struct {
     const Self = @This();
 
     fork: Fork = .{
@@ -27,7 +27,7 @@ const BaseFork = struct {
 };
 
 fn update_parent_block_hash(self: *Fork, block_num: u64, hash: Hash32) anyerror!void {
-    var base_fork: *BaseFork = @fieldParentPtr("fork", self);
+    var base_fork: *FrontierFork = @fieldParentPtr("fork", self);
     if (block_num != base_fork.next_block_hash_index) {
         return error.NonSequentialParentUpdate;
     }
@@ -37,7 +37,7 @@ fn update_parent_block_hash(self: *Fork, block_num: u64, hash: Hash32) anyerror!
 }
 
 fn get_parent_block_hash(self: *Fork, block_num: u64) !Hash32 {
-    const base_fork: *BaseFork = @fieldParentPtr("fork", self);
+    const base_fork: *FrontierFork = @fieldParentPtr("fork", self);
     if (block_num > base_fork.next_block_hash_index or block_num + base_fork.block_hashes.len < base_fork.next_block_hash_index) {
         return std.mem.zeroes(Hash32);
     }
@@ -45,14 +45,14 @@ fn get_parent_block_hash(self: *Fork, block_num: u64) !Hash32 {
     return base_fork.block_hashes[block_num % base_fork.block_hashes.len];
 }
 
-pub fn newBaseFork(allocator: std.mem.Allocator) !*Fork {
-    var base_fork = try allocator.create(BaseFork);
+pub fn newFrontierFork(allocator: std.mem.Allocator) !*Fork {
+    var base_fork = try allocator.create(FrontierFork);
     base_fork.init();
     base_fork.allocator = allocator;
     return &base_fork.fork;
 }
 
 fn deinit(self: *Fork) void {
-    var base_fork: *BaseFork = @fieldParentPtr("fork", self);
+    var base_fork: *FrontierFork = @fieldParentPtr("fork", self);
     base_fork.allocator.destroy(base_fork);
 }

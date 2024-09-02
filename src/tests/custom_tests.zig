@@ -26,7 +26,7 @@ test "create contract" {
 
     // Configure an EVM execution enviroment for a block from this coinbase.
     const env: Environment = .{
-        .fork = try Fork.base.newBaseFork(allocator),
+        .fork = try Fork.frontier.newFrontierFork(allocator),
         .origin = coinbase,
         .coinbase = coinbase,
         .number = 100,
