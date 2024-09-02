@@ -151,11 +151,7 @@ const EVMOneHost = struct {
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const idx = vm.env.number - @as(u64, @intCast(block_number));
-        if (idx < 0 or idx >= vm.env.block_hashes.len) {
-            return std.mem.zeroes(evmc.evmc_bytes32);
-        }
-
-        return .{ .bytes = vm.env.block_hashes[idx] };
+        return .{ .bytes = vm.env.fork.get_parent_block_hash(idx) catch @panic("unhandled error getting parent hash") };
     }
 
     fn account_exists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) bool {

@@ -12,6 +12,7 @@ const Hash32 = types.Hash32;
 const Address = types.Address;
 const StateDB = state.StateDB;
 const ChainID = config.ChainId;
+const Fork = blockchain.Fork;
 
 test "create contract" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -25,7 +26,7 @@ test "create contract" {
 
     // Configure an EVM execution enviroment for a block from this coinbase.
     const env: Environment = .{
-        .block_hashes = [_]Hash32{std.mem.zeroes(Hash32)} ** 256,
+        .fork = try Fork.frontier.newFrontierFork(allocator),
         .origin = coinbase,
         .coinbase = coinbase,
         .number = 100,

@@ -29,14 +29,15 @@ const Log = types.Log;
 const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
+pub const Fork = @import("fork.zig");
 
 pub const Blockchain = struct {
     allocator: Allocator,
     chain_id: config.ChainId,
     state: *StateDB,
     prev_block: BlockHeader,
-    last_256_blocks_hashes: [256]Hash32, // ordered in asc order
     tx_signer: TxSigner,
+    fork: *Fork,
 
     // init initializes a blockchain.
     // The caller **does not** transfer ownership of prev_block.
@@ -45,14 +46,14 @@ pub const Blockchain = struct {
         chain_id: config.ChainId,
         state: *StateDB,
         prev_block: BlockHeader,
-        last_256_blocks_hashes: [256]Hash32,
+        fork: *Fork,
     ) !Blockchain {
         return .{
             .allocator = allocator,
             .chain_id = chain_id,
             .state = state,
             .prev_block = try prev_block.clone(allocator),
-            .last_256_blocks_hashes = last_256_blocks_hashes,
+            .fork = fork,
             .tx_signer = try signer.TxSigner.init(@intFromEnum(chain_id)),
         };
     }
@@ -65,6 +66,9 @@ pub const Blockchain = struct {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         const allocator = arena.allocator();
+
+        // Add the current block to the last 256 block hashes.
+        try self.fork.update_parent_block_hash(block.header.block_number - 1, block.header.parent_hash);
 
         // Execute block.
         var result = try applyBody(allocator, self, self.state, block, self.tx_signer);
@@ -84,12 +88,6 @@ pub const Blockchain = struct {
         //     return error.InvalidLogsBloom;
         if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root))
             return error.InvalidWithdrawalsRoot;
-
-        // Add the current block to the last 256 block hashes.
-        // TODO: this can be done more efficiently with some ring buffer to avoid copying the slice
-        // to make room for the new block hash.
-        std.mem.copyForwards(Hash32, &self.last_256_blocks_hashes, self.last_256_blocks_hashes[1..255]);
-        self.last_256_blocks_hashes[255] = try common.encodeToRLPAndHash(BlockHeader, allocator, block.header, null);
 
         // Note that we free and clone with the Blockchain allocator, and not the arena allocator.
         // This is required since Blockchain field lifetimes are longer than the block execution processing.
@@ -164,8 +162,8 @@ pub const Blockchain = struct {
             const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas, gas_available, tx_signer);
 
             const env: Environment = .{
+                .fork = chain.fork,
                 .origin = tx_info.sender_address,
-                .block_hashes = chain.last_256_blocks_hashes,
                 .coinbase = block.header.fee_recipient,
                 .number = block.header.block_number,
                 .gas_limit = block.header.gas_limit,
