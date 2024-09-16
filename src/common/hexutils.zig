@@ -20,7 +20,10 @@ pub fn prefixedhex2hash(dst: []u8, src: []const u8) !void {
 // This function turns an optionally '0x'-prefixed hex string
 // to a byte slice
 pub fn prefixedhex2byteslice(allocator: Allocator, src: []const u8) ![]u8 {
-    // TODO catch the 0x0 corner case
+      if (src.len == 0 or (src.len == 3 and std.mem.eql(u8, src, "0x0"))) {
+        return allocator.alloc(u8, 0); // Return an empty slice for "0x0"
+    }
+
     if (src.len < 2 or src.len % 2 != 0) {
         return error.InvalidInput;
     }
