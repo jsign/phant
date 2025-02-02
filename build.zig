@@ -67,8 +67,8 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const dep_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize });
-    const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
+    const dep_rlp = b.dependency("rlp", .{ .target = target, .optimize = optimize });
+    const depSecp256k1 = b.dependency("zig_eth_secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
     const httpz = b.dependency("httpz", .{
         .target = target,
