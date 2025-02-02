@@ -140,7 +140,7 @@ pub fn main() !void {
     };
     var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, try Fork.frontier.newFrontierFork(allocator));
 
-    var engine_api_server = try httpz.ServerApp(*Blockchain).init(allocator, .{
+    var engine_api_server = try httpz.Server(*Blockchain).init(allocator, .{
         .port = port,
     }, &blockchain);
     var router = engine_api_server.router();
