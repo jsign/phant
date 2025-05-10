@@ -143,8 +143,8 @@ pub fn main() !void {
     var engine_api_server = try httpz.Server(*Blockchain).init(allocator, .{
         .port = port,
     }, &blockchain);
-    var router = engine_api_server.router();
-    router.post("/", engineAPIHandler);
+    var router = try engine_api_server.router(.{});
+    router.post("/", engineAPIHandler, .{});
     std.log.info("Listening on {}", .{port});
     try engine_api_server.listen();
 }
