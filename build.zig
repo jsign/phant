@@ -139,11 +139,13 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addLibraryPath(b.path("zig-out/evmone_build/lib"));
-    exe.linkSystemLibrary("evmone");
+    unit_tests.addLibraryPath(b.path("zig-out/evmone_build/lib"));
+    unit_tests.linkSystemLibrary("evmone");
     // exe.linkCxxAbi();
-    exe.linkLibC();
     unit_tests.linkLibC();
+    unit_tests.linkLibC();
+    unit_tests.addIncludePath(b.path("evmone/include/evmone"));
+    unit_tests.addIncludePath(b.path("evmone/evmc/include"));
     unit_tests.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
     unit_tests.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
