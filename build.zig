@@ -143,7 +143,6 @@ pub fn build(b: *std.Build) !void {
     unit_tests.linkSystemLibrary("evmone");
     // exe.linkCxxAbi();
     unit_tests.linkLibC();
-    unit_tests.linkLibC();
     unit_tests.addIncludePath(b.path("evmone/include/evmone"));
     unit_tests.addIncludePath(b.path("evmone/evmc/include"));
     unit_tests.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
