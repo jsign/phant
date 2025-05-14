@@ -16,8 +16,8 @@
             .hash = "zigcli-0.2.0-ORC7jKlzAgDYhWCmfjBE9jWPA7CqMQKlMTT3Rcadfgzv",
         },
         .zig_eth_secp256k1 = .{
-            .url = "https://github.com/gballet/zig-eth-secp256k1/archive/upgrade-to-0.14.0.tar.gz",
-            .hash = "zig_eth_secp256k1-0.1.0-_U97sGzoDAAuzO5WEYqKKaGiJAmTNq99mPCh0JdsNWY3",
+            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-5.tar.gz",
+            .hash = "zig_eth_secp256k1-0.1.0-_U97sGzoDACkTnLX6ggeDfs_MhZHyxapYfhPPAtoQJJG",
         },
     },
     .paths = .{""},
