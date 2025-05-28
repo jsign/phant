@@ -20,8 +20,8 @@
             .hash = "zig_eth_secp256k1-0.1.0-_U97sBzsDACmwsVCfA9UA3UPr8pK8qaSeLHx97Q_Nnzu",
         },
         .zevem = .{
-            .url = "https://github.com/tsujp/zevem/archive/3fab1c1.tar.gz",
-            .hash = "zevem-0.0.0-ur64bt16AQDrmtK17yXjv2QTRQNxHY1ZFs9KLPrO_Vyq",
+            .url = "https://github.com/gballet/zevem/archive/73b9805.tar.gz",
+            .hash = "zevem-0.0.0-ur64biZ6AQCSZip8ILCEonv9qtqIHWeymNEbN6ETxfwK",
         },
     },
     .paths = .{""},

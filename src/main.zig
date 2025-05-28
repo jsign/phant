@@ -97,7 +97,7 @@ pub fn main() !void {
 
     // TODO print usage upon failure (requires upstream changes)
     // TODO generate version from build and add it here
-    const opts = try simargs.parse(gpa.allocator(), PhantArgs, "", version);
+    const opts = try simargs.parse(allocator, PhantArgs, "", version);
     defer opts.deinit();
 
     const port: u16 = if (opts.args.engine_api_port == null) 8551 else opts.args.engine_api_port.?;

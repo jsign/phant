@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const LazyPath = std.Build.LazyPath;
 
 // extract version string from build.zig.zon. The zon parser hasn't been merged
@@ -38,6 +39,7 @@ fn gitRevision(b: *std.Build) []const u8 {
 // runner.
 pub fn build(b: *std.Build) !void {
     const version_file_path = "src/version.zig";
+    const use_zevem = b.option(bool, "use-zevem", "Use zevem instead of evmone (default=false if target = host, true otherwise)") orelse false;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -68,6 +70,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const dep_rlp = b.dependency("rlp", .{ .target = target, .optimize = optimize });
+    const zevem = b.dependency("zevem", .{ .target = target, .optimize = optimize });
     const depSecp256k1 = b.dependency("zig_eth_secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
     const httpz = b.dependency("httpz", .{
@@ -75,10 +78,6 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     const mod_httpz = httpz.module("httpz");
-
-    const evmone_cmake_config_step = b.addSystemCommand(&.{ "cmake", "-S", "evmone", "-B", "zig-out/evmone_build" });
-    const evmone_cmake_build_step = b.addSystemCommand(&.{ "cmake", "--build", "zig-out/evmone_build" });
-    evmone_cmake_build_step.step.dependOn(&evmone_cmake_config_step.step);
 
     const zigcli = b.dependency("zigcli", .{});
 
@@ -104,13 +103,21 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/tests/lib_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
 
-    const vm_mod = if (target.result.os.tag == .freestanding) vm_mod: {
-        break :vm_mod b.createModule(.{
+    const is_target_host = (builtin.target.os.tag == target.result.os.tag or builtin.target.cpu.arch == target.result.cpu.arch or builtin.target.abi == target.result.abi);
+    const vm_mod = if (use_zevem or !is_target_host) vm_mod: {
+        const vm_mod = b.createModule(.{
             .root_source_file = b.path("src/blockchain/vm_zevem.zig"),
             .target = target,
             .optimize = optimize,
         });
+        vm_mod.addImport("zevem", zevem.module("zevem"));
+        break :vm_mod vm_mod;
     } else vm_mod: {
         const vm_mod = b.createModule(.{
             .root_source_file = b.path("src/blockchain/vm_evmc.zig"),
@@ -121,8 +128,14 @@ pub fn build(b: *std.Build) !void {
         vm_mod.addIncludePath(b.path("evmone/evmc/include"));
         vm_mod.addLibraryPath(b.path("zig-out/evmone_build/lib"));
         lib.linkSystemLibrary("evmone");
+
+        // use cmake to build evmone for now
+        const evmone_cmake_config_step = b.addSystemCommand(&.{ "cmake", "-S", "evmone", "-B", "zig-out/evmone_build" });
+        const evmone_cmake_build_step = b.addSystemCommand(&.{ "cmake", "--build", "zig-out/evmone_build" });
+        evmone_cmake_build_step.step.dependOn(&evmone_cmake_config_step.step);
         lib.step.dependOn(&evmone_cmake_build_step.step);
         exe.step.dependOn(&evmone_cmake_build_step.step);
+        unit_tests.step.dependOn(&evmone_cmake_build_step.step);
         break :vm_mod vm_mod;
     };
     vm_mod.addImport("lib", lib_mod);
@@ -165,13 +178,6 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    // Creates a step for unit testing. This only builds the test executable
-    // but does not run it.
-    const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/tests/lib_tests.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
     unit_tests.root_module.addImport("lib", lib_mod);
     unit_tests.addLibraryPath(b.path("zig-out/evmone_build/lib"));
     unit_tests.linkSystemLibrary("evmone");
@@ -181,7 +187,6 @@ pub fn build(b: *std.Build) !void {
     unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
     unit_tests.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
     unit_tests.root_module.addImport("pretty-table", zigcli.module("pretty-table"));
-    unit_tests.step.dependOn(&evmone_cmake_build_step.step);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;
