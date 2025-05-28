@@ -9,7 +9,7 @@ on:
 jobs:
 
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
 
@@ -22,7 +22,7 @@ jobs:
       run: git submodule update --init --recursive && zig build
 
   lint:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
 
@@ -35,7 +35,7 @@ jobs:
       run: zig fmt --check src/*.zig
 
   test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
 
@@ -48,7 +48,7 @@ jobs:
       run: git submodule update --init --recursive && zig build test
 
   build-aarch64:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
     
