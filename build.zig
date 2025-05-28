@@ -82,6 +82,20 @@ pub fn build(b: *std.Build) !void {
 
     const zigcli = b.dependency("zigcli", .{});
 
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .optimize = optimize,
+        .target = target,
+    });
+
+    const lib = b.addLibrary(.{
+        .name = "phant",
+        .root_module = lib_mod,
+    });
+    // add itself as an import to solve a dependency cycle in tests
+    lib.root_module.addImport("lib", lib.root_module);
+    b.installArtifact(lib);
+
     const exe = b.addExecutable(.{
         .name = "phant",
         // In this case the main source file is merely a path, however, in more
@@ -90,19 +104,38 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addIncludePath(b.path("evmone/include/evmone"));
-    exe.addIncludePath(b.path("evmone/evmc/include"));
-    exe.addLibraryPath(b.path("zig-out/evmone_build/lib"));
-    exe.linkSystemLibrary("evmone");
-    // exe.linkCxxAbi();
+
+    const vm_mod = if (target.result.os.tag == .freestanding) vm_mod: {
+        break :vm_mod b.createModule(.{
+            .root_source_file = b.path("src/blockchain/vm_zevem.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+    } else vm_mod: {
+        const vm_mod = b.createModule(.{
+            .root_source_file = b.path("src/blockchain/vm_evmc.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        vm_mod.addIncludePath(b.path("evmone/include/evmone"));
+        vm_mod.addIncludePath(b.path("evmone/evmc/include"));
+        vm_mod.addLibraryPath(b.path("zig-out/evmone_build/lib"));
+        lib.linkSystemLibrary("evmone");
+        lib.step.dependOn(&evmone_cmake_build_step.step);
+        exe.step.dependOn(&evmone_cmake_build_step.step);
+        break :vm_mod vm_mod;
+    };
+    vm_mod.addImport("lib", lib_mod);
+    lib_mod.addImport("vm", vm_mod);
     exe.linkLibC();
-    exe.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
+    exe.linkLibrary(lib);
+    lib_mod.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
-    exe.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
+    lib_mod.addImport("zig-eth-secp256k1", mod_secp256k1);
     exe.root_module.addImport("httpz", mod_httpz);
     exe.root_module.addImport("simargs", zigcli.module("simargs"));
-    exe.root_module.addImport("pretty-table", zigcli.module("pretty-table"));
-    exe.step.dependOn(&evmone_cmake_build_step.step);
+    lib_mod.addImport("pretty-table", zigcli.module("pretty-table"));
+    exe.root_module.addImport("lib", lib_mod);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -135,21 +168,20 @@ pub fn build(b: *std.Build) !void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/lib.zig"),
+        .root_source_file = b.path("src/tests/lib_tests.zig"),
         .target = target,
         .optimize = optimize,
     });
+    unit_tests.root_module.addImport("lib", lib_mod);
     unit_tests.addLibraryPath(b.path("zig-out/evmone_build/lib"));
     unit_tests.linkSystemLibrary("evmone");
-    // exe.linkCxxAbi();
     unit_tests.linkLibC();
-    unit_tests.linkLibC();
-    unit_tests.addIncludePath(b.path("evmone/include/evmone"));
-    unit_tests.addIncludePath(b.path("evmone/evmc/include"));
+    unit_tests.root_module.addImport("vm", vm_mod);
     unit_tests.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
     unit_tests.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
     unit_tests.root_module.addImport("pretty-table", zigcli.module("pretty-table"));
+    unit_tests.step.dependOn(&evmone_cmake_build_step.step);
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;

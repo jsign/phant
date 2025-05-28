@@ -1,4 +1,4 @@
-const lib = @import("../lib.zig");
+const lib = @import("lib");
 const Hash32 = lib.types.Hash32;
 const Fork = @This();
 pub const frontier = @import("./forks/frontier.zig");

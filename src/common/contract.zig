@@ -1,7 +1,8 @@
 const std = @import("std");
+const lib = @import("lib");
 const Allocator = std.mem.Allocator;
 const rlp = @import("zig-rlp");
-const types = @import("../types/types.zig");
+const types = lib.types;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 // TODO: with careful calculation, we could avoid the allocator.

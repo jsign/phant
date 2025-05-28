@@ -1,6 +1,5 @@
-const evmc = @cImport({
-    @cInclude("evmone.h");
-});
+const zevem = zevem.EVM;
+const EVM = zevem.EVM;
 const std = @import("std");
 const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
@@ -21,38 +20,22 @@ const assert = std.debug.assert;
 
 const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
 
+const EnvFuncs = struct {};
+
 pub const VM = struct {
     const vmlog = std.log.scoped(.vm);
 
     allocator: Allocator,
     env: Environment,
-    evm: [*c]evmc.evmc_vm,
-    host: evmc.struct_evmc_host_interface,
+    evm: EVM,
 
     // init creates a new EVM VM instance. The caller must call deinit() when done.
     pub fn init(allocator: Allocator, env: Environment) VM {
-        const evm = evmc.evmc_create_evmone();
-        vmlog.info("evmone info: name={s}, version={s}, abi_version={d}", .{ evm.*.name, evm.*.version, evm.*.abi_version });
+        const evm = EVM.initi(EnvFuncs{});
         return .{
             .allocator = allocator,
             .env = env,
             .evm = evm,
-            .host = evmc.struct_evmc_host_interface{
-                .account_exists = EVMOneHost.account_exists,
-                .get_storage = EVMOneHost.get_storage,
-                .set_storage = EVMOneHost.set_storage,
-                .get_balance = EVMOneHost.get_balance,
-                .get_code_size = EVMOneHost.get_code_size,
-                .get_code_hash = EVMOneHost.get_code_hash,
-                .copy_code = EVMOneHost.copy_code,
-                .selfdestruct = EVMOneHost.self_destruct,
-                .call = EVMOneHost.call,
-                .get_tx_context = EVMOneHost.get_tx_context,
-                .get_block_hash = EVMOneHost.get_block_hash,
-                .emit_log = EVMOneHost.emit_log,
-                .access_account = EVMOneHost.access_account,
-                .access_storage = EVMOneHost.access_storage,
-            },
         };
     }
 
@@ -65,57 +48,11 @@ pub const VM = struct {
 
     // processMessageCall executes a message call.
     pub fn processMessageCall(self: *VM, msg: Message) !MessageCallOutput {
-        const evmc_message = if (msg.target) |target| blk: {
-            const evmc_message: evmc.struct_evmc_message = .{
-                .kind = evmc.EVMC_CALL,
-                .flags = 0,
-                .depth = 0,
-                .gas = @intCast(msg.gas),
-                .recipient = toEVMCAddress(target),
-                .sender = toEVMCAddress(msg.sender),
-                .input_data = msg.data.ptr,
-                .input_size = msg.data.len,
-                .value = blk2: {
-                    var tx_value: [32]u8 = undefined;
-                    std.mem.writeInt(u256, &tx_value, msg.value, .big);
-                    break :blk2 .{ .bytes = tx_value };
-                },
-                .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
-                .code_address = toEVMCAddress(msg.target),
-            };
-
+        if (msg.target) {
             try self.env.state.incrementNonce(msg.sender);
-
-            break :blk evmc_message;
-        } else blk: {
-            break :blk evmc.struct_evmc_message{
-                .kind = evmc.EVMC_CREATE,
-                .flags = 0,
-                .depth = 0,
-                .gas = @intCast(msg.gas),
-                .recipient = .{
-                    .bytes = blk2: {
-                        const sender_nonce: u64 = @intCast(self.env.state.getAccount(msg.sender).nonce);
-                        break :blk2 common.computeCREATEContractAddress(self.allocator, msg.sender, sender_nonce) catch unreachable;
-                    },
-                },
-                .sender = .{ .bytes = msg.sender },
-                .input_data = msg.data.ptr,
-                .input_size = msg.data.len,
-                .value = blk2: {
-                    var tx_value: [32]u8 = undefined;
-                    std.mem.writeInt(u256, &tx_value, msg.value, .big);
-                    break :blk2 .{ .bytes = tx_value };
-                },
-                .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
-                .code_address = toEVMCAddress(msg.target),
-            };
-        };
-
-        const result = EVMOneHost.call(@ptrCast(self), @ptrCast(&evmc_message));
-        defer {
-            if (result.release) |release| release(&result);
         }
+
+        const result = self.evm.execute();
         return .{
             .gas_left = @intCast(result.gas_left),
             .refund_counter = @intCast(result.gas_refund),

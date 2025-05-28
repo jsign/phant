@@ -16,8 +16,12 @@
             .hash = "zigcli-0.2.0-ORC7jKlzAgDYhWCmfjBE9jWPA7CqMQKlMTT3Rcadfgzv",
         },
         .zig_eth_secp256k1 = .{
-            .url = "https://github.com/gballet/zig-eth-secp256k1/archive/upgrade-to-0.14.0.tar.gz",
-            .hash = "zig_eth_secp256k1-0.1.0-_U97sGzoDAAuzO5WEYqKKaGiJAmTNq99mPCh0JdsNWY3",
+            .url = "git+https://github.com/gballet/zig-eth-secp256k1?ref=add-freestanding-support#4e7e77f50bd0e852fb6a824b9c2ac2c4f8c91bf9",
+            .hash = "zig_eth_secp256k1-0.1.0-_U97sBzsDACmwsVCfA9UA3UPr8pK8qaSeLHx97Q_Nnzu",
+        },
+        .zevem = .{
+            .url = "https://github.com/tsujp/zevem/archive/3fab1c1.tar.gz",
+            .hash = "zevem-0.0.0-ur64bt16AQDrmtK17yXjv2QTRQNxHY1ZFs9KLPrO_Vyq",
         },
     },
     .paths = .{""},
