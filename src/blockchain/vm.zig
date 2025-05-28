@@ -525,7 +525,7 @@ const EVMOneHost = struct {
 // toEVMCAddress transforms an Address or ?Address into an evmc_address.
 fn toEVMCAddress(address: anytype) evmc.struct_evmc_address {
     const addr_typeinfo = @typeInfo(@TypeOf(address));
-    if (@TypeOf(address) != Address and addr_typeinfo.Optional.child != Address) {
+    if (@TypeOf(address) != Address and addr_typeinfo.optional.child != Address) {
         @compileError("address must be of type Address or ?Address");
     }
 
