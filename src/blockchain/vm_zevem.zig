@@ -8,7 +8,9 @@ const Message = lib.blockchain_types.Message;
 
 const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
 
-const EnvFuncs = struct {};
+const EnvFuncs = struct {
+    pub fn getBalance(_: *EnvFuncs) void {}
+};
 const EVM = zevem.evm.New(EnvFuncs);
 
 pub const VM = struct {
@@ -45,7 +47,7 @@ pub const VM = struct {
             try self.env.state.incrementNonce(msg.sender);
         }
 
-        try self.evm.execute();
+        try self.evm.execute(self.env.state.getAccount(msg.target.?).code);
         return .{
             .gas_left = 0,
             .refund_counter = 0,
