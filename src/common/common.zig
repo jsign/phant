@@ -1,5 +1,6 @@
 const std = @import("std");
-const types = @import("../types/types.zig");
+const lib = @import("lib");
+const types = lib.types;
 const hexutils = @import("hexutils.zig");
 const rlp = @import("rlp.zig");
 const contract = @import("contract.zig");

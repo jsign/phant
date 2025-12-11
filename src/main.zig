@@ -1,23 +1,23 @@
 const std = @import("std");
-const lib = @import("lib.zig");
+const lib = @import("lib");
 const ChainConfig = lib.config.ChainConfig;
-const types = @import("types/types.zig");
-const crypto = @import("crypto/crypto.zig");
+const types = lib.types;
+const crypto = lib.crypto;
 const ecdsa = crypto.ecdsa;
-const AccountState = @import("state/state.zig").AccountState;
+const AccountState = lib.state.AccountState;
 const Address = types.Address;
-const VM = @import("blockchain/vm.zig").VM;
-const StateDB = @import("state/state.zig").StateDB;
+const VM = @import("vm").VM;
+const StateDB = lib.state.StateDB;
 const Block = types.Block;
 const BlockHeader = types.BlockHeader;
 const Tx = types.Tx;
-const TxSigner = @import("signer/signer.zig").TxSigner;
+const TxSigner = lib.signer.TxSigner;
 const Hash32 = types.Hash32;
 const httpz = @import("httpz");
-const engine_api = @import("engine_api/engine_api.zig");
+const engine_api = lib.engine_api;
 const json = std.json;
 const simargs = @import("simargs");
-const version = @import("version.zig").version;
+const version = lib.version.version;
 const Blockchain = lib.blockchain.Blockchain;
 const Fork = lib.blockchain.Fork;
 
@@ -97,7 +97,7 @@ pub fn main() !void {
 
     // TODO print usage upon failure (requires upstream changes)
     // TODO generate version from build and add it here
-    const opts = try simargs.parse(gpa.allocator(), PhantArgs, "", version);
+    const opts = try simargs.parse(allocator, PhantArgs, "", version);
     defer opts.deinit();
 
     const port: u16 = if (opts.args.engine_api_port == null) 8551 else opts.args.engine_api_port.?;
@@ -140,11 +140,11 @@ pub fn main() !void {
     };
     var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, try Fork.frontier.newFrontierFork(allocator));
 
-    var engine_api_server = try httpz.ServerApp(*Blockchain).init(allocator, .{
+    var engine_api_server = try httpz.Server(*Blockchain).init(allocator, .{
         .port = port,
     }, &blockchain);
-    var router = engine_api_server.router();
-    router.post("/", engineAPIHandler);
+    var router = try engine_api_server.router(.{});
+    router.post("/", engineAPIHandler, .{});
     std.log.info("Listening on {}", .{port});
     try engine_api_server.listen();
 }

@@ -1,11 +1,13 @@
 const evmc = @cImport({
     @cInclude("evmone.h");
 });
+const EVM = @import("zevem").EVM;
 const std = @import("std");
-const types = @import("../types/types.zig");
-const common = @import("../common/common.zig");
-const params = @import("params.zig");
-const blockchain_types = @import("types.zig");
+const lib = @import("lib");
+const types = lib.types;
+const common = lib.common;
+const params = lib.blockchain.params;
+const blockchain_types = lib.blockchain_types;
 const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
 const AddressKey = common.AddressKey;
@@ -525,7 +527,7 @@ const EVMOneHost = struct {
 // toEVMCAddress transforms an Address or ?Address into an evmc_address.
 fn toEVMCAddress(address: anytype) evmc.struct_evmc_address {
     const addr_typeinfo = @typeInfo(@TypeOf(address));
-    if (@TypeOf(address) != Address and addr_typeinfo.Optional.child != Address) {
+    if (@TypeOf(address) != Address and addr_typeinfo.optional.child != Address) {
         @compileError("address must be of type Address or ?Address");
     }
 

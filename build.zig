@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const LazyPath = std.Build.LazyPath;
 
 // extract version string from build.zig.zon. The zon parser hasn't been merged
@@ -38,6 +39,8 @@ fn gitRevision(b: *std.Build) []const u8 {
 // runner.
 pub fn build(b: *std.Build) !void {
     const version_file_path = "src/version.zig";
+    const use_zevem = b.option(bool, "use-zevem", "Use zevem instead of evmone (default=false if target = host, true otherwise)") orelse false;
+    const force_evmone = b.option(bool, "force-evmone", "Force evmone even when cross-compiling (uses zig cc as cmake compiler)") orelse false;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -67,8 +70,9 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const dep_rlp = b.dependency("zig-rlp", .{ .target = target, .optimize = optimize });
-    const depSecp256k1 = b.dependency("zig-eth-secp256k1", .{ .target = target, .optimize = optimize });
+    const dep_rlp = b.dependency("rlp", .{ .target = target, .optimize = optimize });
+    const zevem = b.dependency("zevem", .{ .target = target, .optimize = optimize });
+    const depSecp256k1 = b.dependency("zig_eth_secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
     const httpz = b.dependency("httpz", .{
         .target = target,
@@ -76,65 +80,21 @@ pub fn build(b: *std.Build) !void {
     });
     const mod_httpz = httpz.module("httpz");
 
-    const ethash = b.addStaticLibrary(.{
-        .name = "ethash",
-        .optimize = optimize,
-        .target = target,
-    });
-    const cflags = [_][]const u8{
-        "-Wall",                       "-O3",                    "-fvisibility=hidden",
-        "-fvisibility-inlines-hidden", "-Wpedantic",             "-Werror",
-        "-Wextra",                     "-Wshadow",               "-Wconversion",
-        "-Wsign-conversion",           "-Wno-unknown-pragmas",   "-fno-stack-protector",
-        "-Wimplicit-fallthrough",      "-Wmissing-declarations", "-Wno-attributes",
-        "-Wextra-semi",                "-fno-exceptions",        "-fno-rtti",
-        "-Wno-deprecated", // this one is used to remove a warning about char_trait deprecation
-        "-Wno-strict-prototypes", // this one is used by glue.c to avoid a warning that does not disappear when the prototype is added.
-    };
-    ethash.addCSourceFiles(.{ .root = b.path(""), .files = &[_][]const u8{"ethash/lib/keccak/keccak.c"}, .flags = &cflags });
-    ethash.addIncludePath(b.path("ethash/include"));
-    ethash.linkLibC();
-    ethash.linkLibCpp();
-    b.installArtifact(ethash);
-
-    const evmone = b.addStaticLibrary(.{
-        .name = "evmone",
-        .optimize = optimize,
-        .target = target,
-    });
-    const cppflags = [_][]const u8{
-        "-Wall",                "-std=c++20",                  "-O3",
-        "-fvisibility=hidden",  "-fvisibility-inlines-hidden", "-Wpedantic",
-        "-Werror",              "-Wextra",                     "-Wshadow",
-        "-Wconversion",         "-Wsign-conversion",           "-Wno-unknown-pragmas",
-        "-fno-stack-protector", "-Wimplicit-fallthrough",      "-Wmissing-declarations",
-        "-Wno-attributes",      "-Wextra-semi",                "-fno-exceptions",
-        "-fno-rtti",
-        "-Wno-deprecated", // this one is used to remove a warning about char_trait deprecation
-        "-DPROJECT_VERSION=\"0.14.0-dev\"",
-    };
-    evmone.addCSourceFiles(.{ .root = b.path(""), .files = &[_][]const u8{
-        "evmone/lib/evmone/advanced_analysis.cpp",
-        "evmone/lib/evmone/eof.cpp",
-        "evmone/lib/evmone/advanced_execution.cpp",
-        "evmone/lib/evmone/instructions_calls.cpp",
-        "evmone/lib/evmone/advanced_instructions.cpp",
-        "evmone/lib/evmone/instructions_storage.cpp",
-        "evmone/lib/evmone/baseline.cpp",
-        "evmone/lib/evmone/tracing.cpp",
-        "evmone/lib/evmone/baseline_instruction_table.cpp",
-        "evmone/lib/evmone/vm.cpp",
-    }, .flags = &cppflags });
-
-    evmone.addIncludePath(b.path("evmone/evmc/include"));
-    evmone.addIncludePath(b.path("evmone/include"));
-    evmone.addIncludePath(b.path("intx/include"));
-    evmone.addIncludePath(b.path("ethash/include"));
-    evmone.linkLibC();
-    evmone.linkLibCpp();
-    b.installArtifact(evmone);
-
     const zigcli = b.dependency("zigcli", .{});
+
+    const lib_mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .optimize = optimize,
+        .target = target,
+    });
+
+    const lib = b.addLibrary(.{
+        .name = "phant",
+        .root_module = lib_mod,
+    });
+    // add itself as an import to solve a dependency cycle in tests
+    lib.root_module.addImport("lib", lib.root_module);
+    b.installArtifact(lib);
 
     const exe = b.addExecutable(.{
         .name = "phant",
@@ -144,25 +104,89 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.addIncludePath(b.path("evmone/include/evmone"));
-    exe.addIncludePath(b.path("evmone/evmc/include"));
-    if (target.result.cpu.arch == .x86_64) {
-        // On x86_64, some functions are missing from the static library,
-        // so we define dummy functions to make sure that it compiles.
-        exe.addCSourceFile(.{
-            .file = b.path("src/glue.c"),
-            .flags = &cflags,
+    const unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/tests/lib_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const is_target_host = (builtin.target.os.tag == target.result.os.tag and builtin.target.cpu.arch == target.result.cpu.arch and builtin.target.abi == target.result.abi);
+    const vm_mod = if (use_zevem or (!is_target_host and !force_evmone)) vm_mod: {
+        const vm_mod = b.createModule(.{
+            .root_source_file = b.path("src/blockchain/vm_zevem.zig"),
+            .target = target,
+            .optimize = optimize,
         });
-    }
-    exe.linkLibrary(ethash);
-    exe.linkLibrary(evmone);
+        vm_mod.addImport("zevem", zevem.module("zevem"));
+        break :vm_mod vm_mod;
+    } else vm_mod: {
+        const vm_mod = b.createModule(.{
+            .root_source_file = b.path("src/blockchain/vm_evmc.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        vm_mod.addIncludePath(b.path("evmone/include/evmone"));
+        vm_mod.addIncludePath(b.path("evmone/evmc/include"));
+        vm_mod.addLibraryPath(b.path("zig-out/evmone_build/lib"));
+        lib.linkSystemLibrary("evmone");
+
+        // use cmake to build evmone for now
+        const evmone_cmake_config_step = b.addSystemCommand(&.{"cmake"});
+        evmone_cmake_config_step.addArgs(&.{ "-S", "evmone", "-B", "zig-out/evmone_build" });
+
+        if (!is_target_host) {
+            // Cross-compilation: use zig cc as the C/C++ compiler
+            const cmake_system_name = switch (target.result.os.tag) {
+                .linux => "Linux",
+                .macos => "Darwin",
+                .windows => "Windows",
+                else => @tagName(target.result.os.tag),
+            };
+            const cmake_system_processor = switch (target.result.cpu.arch) {
+                .x86_64 => "x86_64",
+                .aarch64 => "aarch64",
+                .arm => "arm",
+                .riscv64 => "riscv64",
+                else => @tagName(target.result.cpu.arch),
+            };
+            const zig_target = b.fmt("{s}-{s}-{s}", .{
+                @tagName(target.result.cpu.arch),
+                @tagName(target.result.os.tag),
+                @tagName(target.result.abi),
+            });
+
+            evmone_cmake_config_step.addArgs(&.{
+                b.fmt("-DCMAKE_SYSTEM_NAME={s}", .{cmake_system_name}),
+                b.fmt("-DCMAKE_SYSTEM_PROCESSOR={s}", .{cmake_system_processor}),
+                b.fmt("-DCMAKE_C_COMPILER_TARGET={s}", .{zig_target}),
+                b.fmt("-DCMAKE_CXX_COMPILER_TARGET={s}", .{zig_target}),
+                "-DCMAKE_C_COMPILER=zig",
+                "-DCMAKE_CXX_COMPILER=zig",
+                "-DCMAKE_C_COMPILER_ARG1=cc",
+                "-DCMAKE_CXX_COMPILER_ARG1=c++",
+                b.fmt("-DCMAKE_C_FLAGS=-target {s}", .{zig_target}),
+                b.fmt("-DCMAKE_CXX_FLAGS=-target {s}", .{zig_target}),
+            });
+        }
+
+        const evmone_cmake_build_step = b.addSystemCommand(&.{ "cmake", "--build", "zig-out/evmone_build" });
+        evmone_cmake_build_step.step.dependOn(&evmone_cmake_config_step.step);
+        lib.step.dependOn(&evmone_cmake_build_step.step);
+        exe.step.dependOn(&evmone_cmake_build_step.step);
+        unit_tests.step.dependOn(&evmone_cmake_build_step.step);
+        break :vm_mod vm_mod;
+    };
+    vm_mod.addImport("lib", lib_mod);
+    lib_mod.addImport("vm", vm_mod);
     exe.linkLibC();
-    exe.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
+    exe.linkLibrary(lib);
+    lib_mod.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     exe.linkLibrary(depSecp256k1.artifact("secp256k1"));
-    exe.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);
+    lib_mod.addImport("zig-eth-secp256k1", mod_secp256k1);
     exe.root_module.addImport("httpz", mod_httpz);
     exe.root_module.addImport("simargs", zigcli.module("simargs"));
-    exe.root_module.addImport("pretty-table", zigcli.module("pretty-table"));
+    lib_mod.addImport("pretty-table", zigcli.module("pretty-table"));
+    exe.root_module.addImport("lib", lib_mod);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -192,26 +216,11 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    // Creates a step for unit testing. This only builds the test executable
-    // but does not run it.
-    const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    unit_tests.addIncludePath(b.path("evmone/include/evmone"));
-    unit_tests.addIncludePath(b.path("evmone/evmc/include"));
-    if (target.result.cpu.arch == .x86_64) {
-        // On x86_64, some functions are missing from the static library,
-        // so we define dummy functions to make sure that it compiles.
-        unit_tests.addCSourceFile(.{
-            .file = b.path("src/glue.c"),
-            .flags = &cflags,
-        });
-    }
-    unit_tests.linkLibrary(ethash);
-    unit_tests.linkLibrary(evmone);
+    unit_tests.root_module.addImport("lib", lib_mod);
+    unit_tests.addLibraryPath(b.path("zig-out/evmone_build/lib"));
+    unit_tests.linkSystemLibrary("evmone");
     unit_tests.linkLibC();
+    unit_tests.root_module.addImport("vm", vm_mod);
     unit_tests.root_module.addImport("zig-rlp", dep_rlp.module("zig-rlp"));
     unit_tests.linkLibrary(depSecp256k1.artifact("secp256k1"));
     unit_tests.root_module.addImport("zig-eth-secp256k1", mod_secp256k1);

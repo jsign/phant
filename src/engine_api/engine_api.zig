@@ -1,12 +1,12 @@
 const std = @import("std");
+const lib = @import("lib");
 const fmt = std.fmt;
-const types = @import("../types/types.zig");
-const common = @import("../common/common.zig");
+const types = lib.types;
+const common = lib.common;
 const Allocator = std.mem.Allocator;
 const Withdrawal = types.Withdrawal;
 const Tx = types.Tx;
 const ExecutionPayload = execution_payload.ExecutionPayload;
-const lib = @import("../lib.zig");
 const Fork = lib.blockchain.Fork;
 
 pub const execution_payload = @import("execution_payload.zig");

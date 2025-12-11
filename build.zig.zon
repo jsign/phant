@@ -1,22 +1,31 @@
 .{
-    .name = "phant",
+    .fingerprint = 0x24619a25c388c236,
+    .name = .phant,
     .version = "0.0.1-beta-0",
     .dependencies = .{
-        .@"zig-rlp" = .{
-            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.1-beta7.tar.gz",
-            .hash = "12201b3645a414dffc2bca872a1467b549d0029b9e36c80fcaeb22a06ec27fab9aee",
-        },
-        .@"zig-eth-secp256k1" = .{
-            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/95b7f93.tar.gz",
-            .hash = "1220c0cf921a5311489bdd6eaf2f2b82bc9245ba39c2da346039aa311e28db633828",
+        .rlp = .{
+            .url = "https://github.com/gballet/zig-rlp/archive/v0.1.1-beta-8.tar.gz",
+            .hash = "rlp-0.1.0-7i0JtBGSAACU44qijBzojQzyn2kLZ-wnIn5qOJxpWnky",
         },
         .httpz = .{
-            .url = "https://github.com/karlseguin/http.zig/archive/c224ebb.tar.gz",
-            .hash = "12206297df84406cd4eed306acef30eb2a1a6a18b6771ebb4920391a3a7299b2e6a7",
+            .url = "git+https://github.com/karlseguin/http.zig?ref=master#9434eaa607f855da77b80387b0be7f7cf2aaaa63",
+            .hash = "httpz-0.0.0-PNVzrFy3BgC7H3cLoiB1odzkl37NJdPx-OHG6eRXeQLX",
         },
         .zigcli = .{
-            .url = "https://github.com/jiacai2050/zigcli/archive/54d095c.tar.gz",
-            .hash = "1220e8fb37224ab6ee9c575129594a808643b548596d63dd8b87cb42e22a7eed9f51",
+            .url = "https://github.com/jiacai2050/zigcli/archive/refs/tags/v0.2.0.tar.gz",
+            .hash = "zigcli-0.2.0-ORC7jKlzAgDYhWCmfjBE9jWPA7CqMQKlMTT3Rcadfgzv",
+        },
+        .zig_eth_secp256k1 = .{
+            .url = "git+https://github.com/gballet/zig-eth-secp256k1?ref=add-freestanding-support#4e7e77f50bd0e852fb6a824b9c2ac2c4f8c91bf9",
+            .hash = "zig_eth_secp256k1-0.1.0-_U97sBzsDACmwsVCfA9UA3UPr8pK8qaSeLHx97Q_Nnzu",
+        },
+        .zevem = .{
+            .url = "https://github.com/gballet/zevem/archive/73b9805.tar.gz",
+            .hash = "zevem-0.0.0-ur64biZ6AQCSZip8ILCEonv9qtqIHWeymNEbN6ETxfwK",
+        },
+        .curl = .{
+            .url = "https://github.com/jiacai2050/zig-curl/archive/refs/tags/v0.3.0.tar.gz",
+            .hash = "curl-0.3.0-P4tT4ZzSAADueeRzPHnzLFj9lRTJyA3rnOYycH0yu-N4",
         },
     },
     .paths = .{""},

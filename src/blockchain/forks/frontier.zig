@@ -1,6 +1,6 @@
 const std = @import("std");
-const Fork = @import("../fork.zig");
-const lib = @import("../../lib.zig");
+const lib = @import("lib");
+const Fork = lib.blockchain.Fork;
 const Hash32 = lib.types.Hash32;
 
 const base_fork_vtable = Fork.VTable{
