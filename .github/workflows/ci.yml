@@ -60,6 +60,11 @@ jobs:
        uses: mlugg/setup-zig@v2
        with:
          version: 0.14.1
-    
+
+     - name: Install cmake
+       run: |
+         sudo apt update
+         sudo apt install -y cmake
+
      - name: Build
-       run: git submodule update --init --recursive && zig build -Dtarget="aarch64-linux"
+       run: git submodule update --init --recursive && zig build -Dtarget="aarch64-linux" -Dforce-evmone=true

@@ -40,6 +40,7 @@ fn gitRevision(b: *std.Build) []const u8 {
 pub fn build(b: *std.Build) !void {
     const version_file_path = "src/version.zig";
     const use_zevem = b.option(bool, "use-zevem", "Use zevem instead of evmone (default=false if target = host, true otherwise)") orelse false;
+    const force_evmone = b.option(bool, "force-evmone", "Force evmone even when cross-compiling (uses zig cc as cmake compiler)") orelse false;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -109,8 +110,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const is_target_host = (builtin.target.os.tag == target.result.os.tag or builtin.target.cpu.arch == target.result.cpu.arch or builtin.target.abi == target.result.abi);
-    const vm_mod = if (use_zevem or !is_target_host) vm_mod: {
+    const is_target_host = (builtin.target.os.tag == target.result.os.tag and builtin.target.cpu.arch == target.result.cpu.arch and builtin.target.abi == target.result.abi);
+    const vm_mod = if (use_zevem or (!is_target_host and !force_evmone)) vm_mod: {
         const vm_mod = b.createModule(.{
             .root_source_file = b.path("src/blockchain/vm_zevem.zig"),
             .target = target,
@@ -130,7 +131,44 @@ pub fn build(b: *std.Build) !void {
         lib.linkSystemLibrary("evmone");
 
         // use cmake to build evmone for now
-        const evmone_cmake_config_step = b.addSystemCommand(&.{ "cmake", "-S", "evmone", "-B", "zig-out/evmone_build" });
+        const evmone_cmake_config_step = b.addSystemCommand(&.{"cmake"});
+        evmone_cmake_config_step.addArgs(&.{ "-S", "evmone", "-B", "zig-out/evmone_build" });
+
+        if (!is_target_host) {
+            // Cross-compilation: use zig cc as the C/C++ compiler
+            const cmake_system_name = switch (target.result.os.tag) {
+                .linux => "Linux",
+                .macos => "Darwin",
+                .windows => "Windows",
+                else => @tagName(target.result.os.tag),
+            };
+            const cmake_system_processor = switch (target.result.cpu.arch) {
+                .x86_64 => "x86_64",
+                .aarch64 => "aarch64",
+                .arm => "arm",
+                .riscv64 => "riscv64",
+                else => @tagName(target.result.cpu.arch),
+            };
+            const zig_target = b.fmt("{s}-{s}-{s}", .{
+                @tagName(target.result.cpu.arch),
+                @tagName(target.result.os.tag),
+                @tagName(target.result.abi),
+            });
+
+            evmone_cmake_config_step.addArgs(&.{
+                b.fmt("-DCMAKE_SYSTEM_NAME={s}", .{cmake_system_name}),
+                b.fmt("-DCMAKE_SYSTEM_PROCESSOR={s}", .{cmake_system_processor}),
+                b.fmt("-DCMAKE_C_COMPILER_TARGET={s}", .{zig_target}),
+                b.fmt("-DCMAKE_CXX_COMPILER_TARGET={s}", .{zig_target}),
+                "-DCMAKE_C_COMPILER=zig",
+                "-DCMAKE_CXX_COMPILER=zig",
+                "-DCMAKE_C_COMPILER_ARG1=cc",
+                "-DCMAKE_CXX_COMPILER_ARG1=c++",
+                b.fmt("-DCMAKE_C_FLAGS=-target {s}", .{zig_target}),
+                b.fmt("-DCMAKE_CXX_FLAGS=-target {s}", .{zig_target}),
+            });
+        }
+
         const evmone_cmake_build_step = b.addSystemCommand(&.{ "cmake", "--build", "zig-out/evmone_build" });
         evmone_cmake_build_step.step.dependOn(&evmone_cmake_config_step.step);
         lib.step.dependOn(&evmone_cmake_build_step.step);
