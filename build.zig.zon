@@ -24,8 +24,8 @@
             .hash = "zevem-0.0.0-ur64biZ6AQCSZip8ILCEonv9qtqIHWeymNEbN6ETxfwK",
         },
         .curl = .{
-            .url = "https://github.com/jiacai2050/zig-curl/archive/refs/tags/v0.2.0.tar.gz",
-            .hash = "curl-0.2.0-P4tT4UfOAADebEpwArAmrbS8Bzdxnh6PEmtHhbTLdxaG",
+            .url = "https://github.com/jiacai2050/zig-curl/archive/refs/tags/v0.3.0.tar.gz",
+            .hash = "curl-0.3.0-P4tT4ZzSAADueeRzPHnzLFj9lRTJyA3rnOYycH0yu-N4",
         },
     },
     .paths = .{""},
