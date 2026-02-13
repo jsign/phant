@@ -105,11 +105,11 @@ pub const FixtureTest = struct {
             var exp_account_state: AccountState = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
-                log.err("{} expected nonce {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.nonce, got_account_state.nonce });
+                log.err("{x} expected nonce {d} but got {d}", .{ &exp_account_state.addr, exp_account_state.nonce, got_account_state.nonce });
                 return error.PostStateNonceMismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
-                log.err("{} expected balance {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.balance, got_account_state.balance });
+                log.err("{x} expected balance {d} but got {d}", .{ &exp_account_state.addr, exp_account_state.balance, got_account_state.balance });
                 return error.PostStateBalanceMismatch;
             }
 
@@ -122,7 +122,7 @@ pub const FixtureTest = struct {
             while (it_got.next()) |storage_entry| {
                 const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
                 if (!std.mem.eql(u8, storage_entry.value_ptr, &val)) {
-                    log.err("{} expected storage slot value at {d}, got {s}, exp {s}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), storage_entry.key_ptr.*, std.fmt.fmtSliceHexLower(&storage_entry.value_ptr.*), std.fmt.fmtSliceHexLower(&val) });
+                    log.err("{x} expected storage slot value at {d}, got {x}, exp {x}", .{ &exp_account_state.addr, storage_entry.key_ptr.*, &storage_entry.value_ptr.*, &val });
                     return error.PostStateStorageValueMismatch;
                 }
             }

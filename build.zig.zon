@@ -1,22 +1,16 @@
 .{
-    .name = "phant",
+    .fingerprint = 0x24619a25c388c236,
+    .name = .phant,
     .version = "0.0.1-beta-0",
     .dependencies = .{
-        .@"zig-rlp" = .{
-            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.1-beta7.tar.gz",
-            .hash = "12201b3645a414dffc2bca872a1467b549d0029b9e36c80fcaeb22a06ec27fab9aee",
-        },
-        .@"zig-eth-secp256k1" = .{
-            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/95b7f93.tar.gz",
-            .hash = "1220c0cf921a5311489bdd6eaf2f2b82bc9245ba39c2da346039aa311e28db633828",
-        },
-        .httpz = .{
-            .url = "https://github.com/karlseguin/http.zig/archive/c224ebb.tar.gz",
-            .hash = "12206297df84406cd4eed306acef30eb2a1a6a18b6771ebb4920391a3a7299b2e6a7",
+        .rlp = .{
+            .path = "deps/zig-rlp",
         },
         .zigcli = .{
-            .url = "https://github.com/jiacai2050/zigcli/archive/54d095c.tar.gz",
-            .hash = "1220e8fb37224ab6ee9c575129594a808643b548596d63dd8b87cb42e22a7eed9f51",
+            .path = "deps/zigcli",
+        },
+        .zig_eth_secp256k1 = .{
+            .path = "deps/zig-eth-secp256k1",
         },
     },
     .paths = .{""},
