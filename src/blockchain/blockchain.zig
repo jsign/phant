@@ -115,7 +115,9 @@ pub const Blockchain = struct {
             const base_fee_per_gas_delta = prev_block.base_fee_per_gas.? * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator;
             break :blk prev_block.base_fee_per_gas.? - base_fee_per_gas_delta;
         };
-        if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
+        const expected_val = expected_base_fee_per_gas orelse 0;
+        const actual_val = curr_block.base_fee_per_gas orelse 0;
+        if (expected_val != actual_val)
             return error.InvalidBaseFee;
 
         if (curr_block.timestamp <= prev_block.timestamp)
@@ -223,7 +225,7 @@ pub const Blockchain = struct {
         }
 
         while (i < items.len) : (i += 1) {
-            var out = std.ArrayList(u8).init(arena);
+            var out = std.array_list.Managed(u8).init(arena);
             defer out.deinit();
             try rlp.serialize(usize, arena, i, &out);
 

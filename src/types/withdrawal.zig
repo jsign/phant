@@ -2,7 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const rlp = @import("zig-rlp");
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const ArrayList = std.array_list.Managed;
 
 pub const Withdrawal = struct {
     index: u64,

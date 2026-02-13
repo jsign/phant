@@ -123,14 +123,14 @@ pub const ExecutionPayload = struct {
     allocator: Allocator,
 
     pub fn toBlock(self: *const ExecutionPayload) !types.Block {
-        var withdrawals = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
+        var withdrawals = std.array_list.Managed(lib.mpt.KeyVal).init(self.allocator);
         defer withdrawals.deinit();
         for (self.withdrawals, 0..) |w, index| {
             var key = [_]u8{0} ** 32;
             std.mem.writeInt(usize, key[24..], index, .big);
             try withdrawals.append(try lib.mpt.KeyVal.init(self.allocator, &key, try w.encode(self.allocator)));
         }
-        var transactions = std.ArrayList(lib.mpt.KeyVal).init(self.allocator);
+        var transactions = std.array_list.Managed(lib.mpt.KeyVal).init(self.allocator);
         defer transactions.deinit();
         for (self.transactions, 0..) |tx, index| {
             var key = [_]u8{0} ** 32;

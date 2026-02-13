@@ -10,7 +10,7 @@ const AddressKeySet = common.AddressKeySet;
 const AccountData = state.AccountData;
 const AccountState = state.AccountState;
 const Bytes32 = types.Bytes32;
-const ArrayList = std.ArrayList;
+const ArrayList = std.array_list.Managed;
 const log = std.log.scoped(.statedb);
 
 pub const StateDB = struct {

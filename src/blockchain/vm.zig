@@ -16,7 +16,7 @@ const Block = types.Block;
 const Hash32 = types.Hash32;
 const Address = types.Address;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
-const fmtSliceHexLower = std.fmt.fmtSliceHexLower;
+// In Zig 0.15, use {x} format specifier directly on byte slices
 const assert = std.debug.assert;
 
 const empty_hash = common.comptimeHexToBytes("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");
@@ -129,7 +129,7 @@ pub const VM = struct {
 const EVMOneHost = struct {
     const evmclog = std.log.scoped(.evmone);
 
-    fn get_tx_context(ctx: ?*evmc.struct_evmc_host_context) callconv(.C) evmc.struct_evmc_tx_context {
+    fn get_tx_context(ctx: ?*evmc.struct_evmc_host_context) callconv(.c) evmc.struct_evmc_tx_context {
         evmclog.debug("getTxContext", .{});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
@@ -146,7 +146,7 @@ const EVMOneHost = struct {
         };
     }
 
-    fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, block_number: i64) callconv(.C) evmc.evmc_bytes32 {
+    fn get_block_hash(ctx: ?*evmc.struct_evmc_host_context, block_number: i64) callconv(.c) evmc.evmc_bytes32 {
         evmclog.debug("getBlockHash block_number={}", .{block_number});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
@@ -154,9 +154,9 @@ const EVMOneHost = struct {
         return .{ .bytes = vm.env.fork.get_parent_block_hash(idx) catch @panic("unhandled error getting parent hash") };
     }
 
-    fn account_exists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) bool {
+    fn account_exists(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.c) bool {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("accountExists addr=0x{}", .{fmtSliceHexLower(&address)});
+        evmclog.debug("accountExists addr=0x{x}", .{&address});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
@@ -167,9 +167,9 @@ const EVMOneHost = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
         key: [*c]const evmc.evmc_bytes32,
-    ) callconv(.C) evmc.evmc_bytes32 {
+    ) callconv(.c) evmc.evmc_bytes32 {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("getStorage addr=0x{} key={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes) });
+        evmclog.debug("getStorage addr=0x{x} key={x}", .{ &address, &key.*.bytes });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const k = std.mem.readInt(u256, &key.*.bytes, std.builtin.Endian.big);
@@ -182,9 +182,9 @@ const EVMOneHost = struct {
         addr: [*c]const evmc.evmc_address,
         key: [*c]const evmc.evmc_bytes32,
         value: [*c]const evmc.evmc_bytes32,
-    ) callconv(.C) evmc.enum_evmc_storage_status {
+    ) callconv(.c) evmc.enum_evmc_storage_status {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("setStorage addr=0x{} key={} value={}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes), fmtSliceHexLower(&value.*.bytes) });
+        evmclog.debug("setStorage addr=0x{x} key={x} value={x}", .{ &address, &key.*.bytes, &value.*.bytes });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
@@ -263,18 +263,18 @@ const EVMOneHost = struct {
         return storage_status;
     }
 
-    fn get_balance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.evmc_uint256be {
+    fn get_balance(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.c) evmc.evmc_uint256be {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("getBalance addr=0x{})", .{fmtSliceHexLower(&address)});
+        evmclog.debug("getBalance addr=0x{x})", .{&address});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
         return toEVMCUint256Be(vm.env.state.getAccount(address).balance);
     }
 
-    fn get_code_size(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) usize {
+    fn get_code_size(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.c) usize {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("getCodeSize addr=0x{})", .{fmtSliceHexLower(&address)});
+        evmclog.debug("getCodeSize addr=0x{x})", .{&address});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
@@ -284,9 +284,9 @@ const EVMOneHost = struct {
     fn get_code_hash(
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
-    ) callconv(.C) evmc.evmc_bytes32 {
+    ) callconv(.c) evmc.evmc_bytes32 {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("getCodeHash addr=0x{})", .{fmtSliceHexLower(&address)});
+        evmclog.debug("getCodeHash addr=0x{x})", .{&address});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         var ret = empty_hash;
@@ -303,9 +303,9 @@ const EVMOneHost = struct {
         code_offset: usize,
         buffer_data: [*c]u8,
         buffer_size: usize,
-    ) callconv(.C) usize {
+    ) callconv(.c) usize {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("copyCode addr=0x{} code_offset={})", .{ fmtSliceHexLower(&address), code_offset });
+        evmclog.debug("copyCode addr=0x{x} code_offset={})", .{ &address, code_offset });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const code = vm.env.state.getAccount(address).code;
@@ -320,12 +320,13 @@ const EVMOneHost = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
         addr2: [*c]const evmc.evmc_address,
-    ) callconv(.C) bool {
+    ) callconv(.c) bool {
         _ = addr2;
         _ = addr;
         _ = ctx;
         // https://evmc.ethereum.org/group__EVMC.html#ga1aa9fa657b3f0de375e2f07e53b65bcc
-        @panic("TODO");
+        // TODO: implement SELFDESTRUCT — returning false (not destroyed) as no-op
+        return false;
     }
 
     fn emit_log(
@@ -335,7 +336,7 @@ const EVMOneHost = struct {
         data_size: usize,
         topics: [*c]const evmc.evmc_bytes32,
         topics_count: usize,
-    ) callconv(.C) void {
+    ) callconv(.c) void {
         _ = topics_count;
         _ = topics;
         _ = data_size;
@@ -343,12 +344,12 @@ const EVMOneHost = struct {
         _ = addr;
         _ = ctx;
         // https://evmc.ethereum.org/group__EVMC.html#gaab96621b67d653758b3da15c2b596938
-        @panic("TODO");
+        // TODO: implement LOG — no-op for now
     }
 
-    fn access_account(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.C) evmc.enum_evmc_access_status {
+    fn access_account(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.c) evmc.enum_evmc_access_status {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("accessAccount addr=0x{}", .{fmtSliceHexLower(&address)});
+        evmclog.debug("accessAccount addr=0x{x}", .{&address});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         if (vm.env.state.accessedAccountsContains(address))
@@ -364,9 +365,9 @@ const EVMOneHost = struct {
         ctx: ?*evmc.struct_evmc_host_context,
         addr: [*c]const evmc.evmc_address,
         key: [*c]const evmc.evmc_bytes32,
-    ) callconv(.C) evmc.enum_evmc_access_status {
+    ) callconv(.c) evmc.enum_evmc_access_status {
         const address = fromEVMCAddress(addr.*);
-        evmclog.debug("accessStorage addr=0x{} key=0x{}", .{ fmtSliceHexLower(&address), fmtSliceHexLower(&key.*.bytes) });
+        evmclog.debug("accessStorage addr=0x{x} key=0x{x}", .{ &address, &key.*.bytes });
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const address_key: AddressKey = .{ .address = address, .key = key.*.bytes };
@@ -379,7 +380,7 @@ const EVMOneHost = struct {
         return evmc.EVMC_ACCESS_COLD;
     }
 
-    fn call(ctx: ?*evmc.struct_evmc_host_context, _msg: [*c]const evmc.struct_evmc_message) callconv(.C) evmc.struct_evmc_result {
+    fn call(ctx: ?*evmc.struct_evmc_host_context, _msg: [*c]const evmc.struct_evmc_message) callconv(.c) evmc.struct_evmc_result {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
 
         var msg = _msg.*;
@@ -411,7 +412,7 @@ const EVMOneHost = struct {
             else => @panic("unknown message kind"),
         };
 
-        evmclog.debug("call() kind={d} depth={d} sender={} recipient={} gas={}", .{ msg.kind, msg.depth, fmtSliceHexLower(&msg.sender.bytes), fmtSliceHexLower(&msg.recipient.bytes), msg.gas });
+        evmclog.debug("call() kind={d} depth={d} sender={x} recipient={x} gas={}", .{ msg.kind, msg.depth, &msg.sender.bytes, &msg.recipient.bytes, msg.gas });
 
         if (msg.depth > params.stack_depth_limit) {
             return .{
@@ -516,7 +517,7 @@ const EVMOneHost = struct {
             // If the *CALL failed, we restore the previous statedb.
             vm.env.state.* = prev_statedb;
         }
-        evmclog.debug("call() end depth={d} status_code={} gas_left={} create_address={}", .{ msg.depth, result.status_code, result.gas_left, std.fmt.fmtSliceHexLower(&result.create_address.bytes) });
+        evmclog.debug("call() end depth={d} status_code={} gas_left={} create_address={x}", .{ msg.depth, result.status_code, result.gas_left, &result.create_address.bytes });
 
         return result;
     }

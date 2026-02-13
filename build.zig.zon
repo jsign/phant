@@ -4,20 +4,13 @@
     .version = "0.0.1-beta-0",
     .dependencies = .{
         .rlp = .{
-            .url = "https://github.com/gballet/zig-rlp/archive/v0.1.1-beta-8.tar.gz",
-            .hash = "rlp-0.1.0-7i0JtBGSAACU44qijBzojQzyn2kLZ-wnIn5qOJxpWnky",
-        },
-        .httpz = .{
-            .url = "git+https://github.com/karlseguin/http.zig?ref=master#9434eaa607f855da77b80387b0be7f7cf2aaaa63",
-            .hash = "httpz-0.0.0-PNVzrFy3BgC7H3cLoiB1odzkl37NJdPx-OHG6eRXeQLX",
+            .path = "deps/zig-rlp",
         },
         .zigcli = .{
-            .url = "https://github.com/jiacai2050/zigcli/archive/refs/tags/v0.2.0.tar.gz",
-            .hash = "zigcli-0.2.0-ORC7jKlzAgDYhWCmfjBE9jWPA7CqMQKlMTT3Rcadfgzv",
+            .path = "deps/zigcli",
         },
         .zig_eth_secp256k1 = .{
-            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/refs/tags/v0.1.0-beta-5.tar.gz",
-            .hash = "zig_eth_secp256k1-0.1.0-_U97sGzoDACkTnLX6ggeDfs_MhZHyxapYfhPPAtoQJJG",
+            .path = "deps/zig-eth-secp256k1",
         },
     },
     .paths = .{""},
