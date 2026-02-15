@@ -6,9 +6,6 @@
         .rlp = .{
             .path = "deps/zig-rlp",
         },
-        .zigcli = .{
-            .path = "deps/zigcli",
-        },
         .zig_eth_secp256k1 = .{
             .path = "deps/zig-eth-secp256k1",
         },

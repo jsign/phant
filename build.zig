@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     const dep_rlp = b.dependency("rlp", .{ .target = target, .optimize = optimize });
     const depSecp256k1 = b.dependency("zig_eth_secp256k1", .{ .target = target, .optimize = optimize });
     const mod_secp256k1 = depSecp256k1.module("zig-eth-secp256k1");
-    const zigcli = b.dependency("zigcli", .{});
+//     const zigcli = b.dependency("zigcli", .{});
 
     const evmone_cmake_config_step = b.addSystemCommand(&.{ "cmake", "-S", "evmone", "-B", "zig-out/evmone_build" });
     const evmone_cmake_build_step = b.addSystemCommand(&.{ "cmake", "--build", "zig-out/evmone_build" });
@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "zig-rlp", .module = dep_rlp.module("zig-rlp") },
             .{ .name = "zig-eth-secp256k1", .module = mod_secp256k1 },
-            .{ .name = "pretty-table", .module = zigcli.module("pretty-table") },
+//             .{ .name = "pretty-table", .module = zigcli.module("pretty-table") },
         },
     });
     phant_mod.addIncludePath(b.path("evmone/include/evmone"));
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "zig-rlp", .module = dep_rlp.module("zig-rlp") },
             .{ .name = "zig-eth-secp256k1", .module = mod_secp256k1 },
-            .{ .name = "pretty-table", .module = zigcli.module("pretty-table") },
+//             .{ .name = "pretty-table", .module = zigcli.module("pretty-table") },
         },
     });
     test_mod.addLibraryPath(b.path("zig-out/evmone_build/lib"));
