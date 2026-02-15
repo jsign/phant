@@ -79,7 +79,7 @@ pub const Blockchain = struct {
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used) {
-            std.log.err("gas_used mismatch: got {d}, expected {d}", .{ result.gas_used, block.header.gas_used });
+            std.log.err("gas_used mismatch in block {d}: got {d}, expected {d}", .{ block.header.block_number, result.gas_used, block.header.gas_used });
             return error.InvalidGasUsed;
         }
         if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root)) {

@@ -52,6 +52,8 @@ pub const VM = struct {
                 .emit_log = EVMOneHost.emit_log,
                 .access_account = EVMOneHost.access_account,
                 .access_storage = EVMOneHost.access_storage,
+                .get_transient_storage = EVMOneHost.get_transient_storage,
+                .set_transient_storage = EVMOneHost.set_transient_storage,
             },
         };
     }
@@ -258,6 +260,7 @@ const EVMOneHost = struct {
             error.OutOfMemory => @panic("OOO"),
         };
 
+
         return storage_status;
     }
 
@@ -287,10 +290,13 @@ const EVMOneHost = struct {
         evmclog.debug("getCodeHash addr=0x{x})", .{&address});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+
+        // EIP-1052: non-existent accounts return 0
+        const account = vm.env.state.getAccountOpt(address) orelse return .{ .bytes = std.mem.zeroes([32]u8) };
+
         var ret = empty_hash;
-        const code = vm.env.state.getAccount(address).code;
-        if (code.len > 0)
-            Keccak256.hash(code, &ret, .{});
+        if (account.code.len > 0)
+            Keccak256.hash(account.code, &ret, .{});
 
         return .{ .bytes = ret };
     }
@@ -323,12 +329,14 @@ const EVMOneHost = struct {
         const address = fromEVMCAddress(addr.*);
         const beneficiary = fromEVMCAddress(addr2.*);
 
-        // Transfer balance to beneficiary
+        // Transfer balance to beneficiary (add then subtract, handles self-destruct-to-self correctly)
         const balance = vm.env.state.getAccount(address).balance;
         if (balance > 0) {
             const ben_balance = vm.env.state.getAccount(beneficiary).balance;
             vm.env.state.setBalance(beneficiary, ben_balance + balance) catch @panic("OOM in selfdestruct");
-            vm.env.state.setBalance(address, 0) catch @panic("OOM in selfdestruct");
+            // Re-read balance in case beneficiary == address (it would have changed)
+            const addr_balance_now = vm.env.state.getAccount(address).balance;
+            vm.env.state.setBalance(address, addr_balance_now - balance) catch @panic("OOM in selfdestruct");
         }
 
         // EIP-6780 (Cancun): only actually destroy if created in same tx
@@ -400,6 +408,17 @@ const EVMOneHost = struct {
         };
 
         return evmc.EVMC_ACCESS_COLD;
+    }
+
+    fn get_transient_storage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, key: [*c]const evmc.evmc_bytes32) callconv(.c) evmc.evmc_bytes32 {
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const value = vm.env.state.getTransientStorage(fromEVMCAddress(addr.*), key.*.bytes);
+        return .{ .bytes = value };
+    }
+
+    fn set_transient_storage(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address, key: [*c]const evmc.evmc_bytes32, value: [*c]const evmc.evmc_bytes32) callconv(.c) void {
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        vm.env.state.setTransientStorage(fromEVMCAddress(addr.*), key.*.bytes, value.*.bytes) catch @panic("OOM setTransientStorage");
     }
 
     fn call(ctx: ?*evmc.struct_evmc_host_context, _msg: [*c]const evmc.struct_evmc_message) callconv(.c) evmc.struct_evmc_result {
@@ -545,9 +564,16 @@ const EVMOneHost = struct {
                 };
         } else {
             // If the *CALL failed, we restore the previous statedb.
+            // EIP-2929: accessed accounts/storage persist across reverts.
+            const current_accessed_accounts = vm.env.state.accessed_accounts;
+            const current_accessed_storage = vm.env.state.accessed_storage_keys;
+            prev_statedb.accessed_accounts.deinit();
+            prev_statedb.accessed_storage_keys.deinit();
+            prev_statedb.accessed_accounts = current_accessed_accounts;
+            prev_statedb.accessed_storage_keys = current_accessed_storage;
             vm.env.state.* = prev_statedb;
         }
-        evmclog.debug("call() end depth={d} status_code={} gas_left={} create_address={x}", .{ msg.depth, result.status_code, result.gas_left, &result.create_address.bytes });
+        evmclog.debug("call() end depth={d} status_code={} gas_left={} gas_refund={} create_address={x}", .{ msg.depth, result.status_code, result.gas_left, result.gas_refund, &result.create_address.bytes });
 
         return result;
     }

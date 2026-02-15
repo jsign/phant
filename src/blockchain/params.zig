@@ -30,6 +30,20 @@ pub const precompiled_contract_addresses = [_]Address{
     addressFromInt(7), // ALT_BN128_MUL
     addressFromInt(8), // ALT_BN128_PAIRING_CHECK
     addressFromInt(9), // BLAKE2F
+    addressFromInt(0x0a), // POINT_EVALUATION (EIP-4844)
+};
+
+// EIP-2537: BLS12-381 precompiles added in Prague
+pub const prague_precompiled_contract_addresses = [_]Address{
+    addressFromInt(0x0b), // BLS12_G1ADD
+    addressFromInt(0x0c), // BLS12_G1MUL
+    addressFromInt(0x0d), // BLS12_G1MSM
+    addressFromInt(0x0e), // BLS12_G2ADD
+    addressFromInt(0x0f), // BLS12_G2MUL
+    addressFromInt(0x10), // BLS12_G2MSM
+    addressFromInt(0x11), // BLS12_PAIRING
+    addressFromInt(0x12), // BLS12_MAP_FP_TO_G1
+    addressFromInt(0x13), // BLS12_MAP_FP2_TO_G2
 };
 
 fn addressFromInt(comptime i: u160) Address {

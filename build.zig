@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void {
     });
     phant_mod.addIncludePath(b.path("evmone/include/evmone"));
     phant_mod.addIncludePath(b.path("evmone/evmc/include"));
-    phant_mod.addLibraryPath(b.path("zig-out/evmone_build/lib"));
+    phant_mod.addLibraryPath(b.path("zig-out/evmone_build/lib64"));
     phant_mod.linkSystemLibrary("evmone", .{});
     phant_mod.linkLibrary(depSecp256k1.artifact("secp256k1"));
 
@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) void {
 //             .{ .name = "pretty-table", .module = zigcli.module("pretty-table") },
         },
     });
-    test_mod.addLibraryPath(b.path("zig-out/evmone_build/lib"));
+    test_mod.addLibraryPath(b.path("zig-out/evmone_build/lib64"));
     test_mod.linkSystemLibrary("evmone", .{});
     test_mod.addIncludePath(b.path("evmone/include/evmone"));
     test_mod.addIncludePath(b.path("evmone/evmc/include"));

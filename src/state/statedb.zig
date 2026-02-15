@@ -30,6 +30,7 @@ pub const StateDB = struct {
     accessed_storage_keys: AddressKeySet,
     created_accounts: AddressSet,
     accounts_to_destroy: AddressSet,
+    transient_storage: std.AutoHashMap(AddressKey, Bytes32),
 
     pub fn init(allocator: Allocator, accounts: []const AccountState) !StateDB {
         var db = AccountDB.init(allocator);
@@ -45,6 +46,7 @@ pub const StateDB = struct {
             .touched_addresses = ArrayList(Address).init(allocator),
             .created_accounts = AddressSet.init(allocator),
             .accounts_to_destroy = AddressSet.init(allocator),
+            .transient_storage = std.AutoHashMap(AddressKey, Bytes32).init(allocator),
         };
     }
 
@@ -78,6 +80,7 @@ pub const StateDB = struct {
         self.accessed_storage_keys.clearRetainingCapacity();
         self.created_accounts.clearRetainingCapacity();
         self.accounts_to_destroy.clearRetainingCapacity();
+        self.transient_storage.clearRetainingCapacity();
     }
 
     pub fn isEmpty(self: StateDB, addr: Address) bool {
@@ -198,6 +201,16 @@ pub const StateDB = struct {
         return self.created_accounts.contains(addr);
     }
 
+    pub fn getTransientStorage(self: *StateDB, addr: Address, key: Bytes32) Bytes32 {
+        const ak = AddressKey{ .address = addr, .key = key };
+        return self.transient_storage.get(ak) orelse std.mem.zeroes(Bytes32);
+    }
+
+    pub fn setTransientStorage(self: *StateDB, addr: Address, key: Bytes32, value: Bytes32) !void {
+        const ak = AddressKey{ .address = addr, .key = key };
+        try self.transient_storage.put(ak, value);
+    }
+
     pub fn snapshot(self: *StateDB) !StateDB {
         // TODO: while simple this is quite inefficient.
         // A much smarter way is doing some "diff" style snapshotting or similar.
@@ -210,6 +223,7 @@ pub const StateDB = struct {
             .touched_addresses = try self.touched_addresses.clone(),
             .created_accounts = try self.created_accounts.clone(),
             .accounts_to_destroy = try self.accounts_to_destroy.clone(),
+            .transient_storage = try self.transient_storage.clone(),
         };
     }
 

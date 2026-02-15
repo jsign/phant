@@ -66,12 +66,12 @@ pub const secp256k1_pubkey = extern struct {
 pub const secp256k1_ecdsa_signature = extern struct {
     data: [64]u8,
 };
-pub const secp256k1_nonce_function = ?*const fn ([*c]u8, [*c]const u8, [*c]const u8, [*c]const u8, ?*anyopaque, c_uint) callconv(.C) c_int;
+pub const secp256k1_nonce_function = ?*const fn ([*c]u8, [*c]const u8, [*c]const u8, [*c]const u8, ?*anyopaque, c_uint) callconv(.c) c_int;
 pub extern fn secp256k1_context_create(flags: c_uint) ?*secp256k1_context;
 pub extern fn secp256k1_context_clone(ctx: ?*const secp256k1_context) ?*secp256k1_context;
 pub extern fn secp256k1_context_destroy(ctx: ?*secp256k1_context) void;
-pub extern fn secp256k1_context_set_illegal_callback(ctx: ?*secp256k1_context, fun: ?*const fn ([*c]const u8, ?*anyopaque) callconv(.C) void, data: ?*const anyopaque) void;
-pub extern fn secp256k1_context_set_error_callback(ctx: ?*secp256k1_context, fun: ?*const fn ([*c]const u8, ?*anyopaque) callconv(.C) void, data: ?*const anyopaque) void;
+pub extern fn secp256k1_context_set_illegal_callback(ctx: ?*secp256k1_context, fun: ?*const fn ([*c]const u8, ?*anyopaque) callconv(.c) void, data: ?*const anyopaque) void;
+pub extern fn secp256k1_context_set_error_callback(ctx: ?*secp256k1_context, fun: ?*const fn ([*c]const u8, ?*anyopaque) callconv(.c) void, data: ?*const anyopaque) void;
 pub extern fn secp256k1_ec_pubkey_parse(ctx: ?*const secp256k1_context, pubkey: [*c]secp256k1_pubkey, input: [*c]const u8, inputlen: usize) c_int;
 pub extern fn secp256k1_ec_pubkey_serialize(ctx: ?*const secp256k1_context, output: [*c]u8, outputlen: [*c]usize, pubkey: [*c]const secp256k1_pubkey, flags: c_uint) c_int;
 pub extern fn secp256k1_ecdsa_signature_parse_compact(ctx: ?*const secp256k1_context, sig: [*c]secp256k1_ecdsa_signature, input64: [*c]const u8) c_int;
