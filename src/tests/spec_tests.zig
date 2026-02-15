@@ -101,6 +101,15 @@ pub const FixtureTest = struct {
         };
         var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, fork);
 
+        // Set EVMC revision based on network
+        if (std.mem.eql(u8, self.network, "Cancun")) {
+            chain.evmc_revision = 12; // EVMC_CANCUN
+        } else if (std.mem.eql(u8, self.network, "Prague")) {
+            chain.evmc_revision = 13; // EVMC_PRAGUE
+        } else if (std.mem.eql(u8, self.network, "Shanghai")) {
+            chain.evmc_revision = 11; // EVMC_SHANGHAI
+        }
+
         // Execute blocks.
         for (self.blocks) |encoded_block| {
             out = try allocator.alloc(u8, encoded_block.rlp.len / 2);

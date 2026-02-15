@@ -26,6 +26,7 @@ const Bytes32 = types.Bytes32;
 const Address = types.Address;
 const Receipt = types.Receipt;
 const Log = types.Log;
+const LogArrayList = std.ArrayList(Log);
 const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
@@ -38,6 +39,7 @@ pub const Blockchain = struct {
     prev_block: BlockHeader,
     tx_signer: TxSigner,
     fork: *Fork,
+    evmc_revision: u8 = 11,
 
     // init initializes a blockchain.
     // The caller **does not** transfer ownership of prev_block.
@@ -47,6 +49,7 @@ pub const Blockchain = struct {
         state: *StateDB,
         prev_block: BlockHeader,
         fork: *Fork,
+    evmc_revision: u8 = 11,
     ) !Blockchain {
         return .{
             .allocator = allocator,
@@ -175,6 +178,7 @@ pub const Blockchain = struct {
                 .prev_randao = block.header.prev_randao,
                 .state = state,
                 .chain_id = chain.chain_id,
+                .evmc_revision = chain.evmc_revision,
             };
 
             try state.startTx();
@@ -183,7 +187,7 @@ pub const Blockchain = struct {
 
             // Create receipt.
             const cumm_gas_used = block.header.gas_limit - gas_available;
-            receipts[i] = Receipt.init(exec_tx_result.success, cumm_gas_used, &[_]Log{});
+            receipts[i] = Receipt.init(exec_tx_result.success, cumm_gas_used, @constCast(exec_tx_result.logs));
 
             // TODO: do tx logs aggregation.
         }
@@ -261,7 +265,7 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64 } {
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64, logs: []const Log = &[_]Log{} } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
 
@@ -309,7 +313,10 @@ pub const Blockchain = struct {
             .value = tx.getValue(),
             .data = tx.getData(),
         };
-        const output = try processMessageCall(allocator, message, env);
+        var logs_list = LogArrayList.init(allocator);
+        var env_with_logs = env;
+        env_with_logs.logs = &logs_list;
+        const output = try processMessageCall(allocator, message, env_with_logs);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
@@ -341,7 +348,7 @@ pub const Blockchain = struct {
                 env.state.destroyAccount(address);
         }
 
-        return .{ .success = output.success, .gas_used = total_gas_used };
+        return .{ .success = output.success, .gas_used = total_gas_used, .logs = output.logs };
     }
 
     fn validateTransaction(tx: transaction.Tx) bool {

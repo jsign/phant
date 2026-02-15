@@ -110,7 +110,10 @@ pub const StateDB = struct {
     }
 
     pub fn setStorage(self: *StateDB, addr: Address, key: u256, value: Bytes32) !void {
-        var account = self.db.getPtr(addr) orelse return error.AccountDoesNotExist;
+        var account = self.db.getPtr(addr) orelse blk: {
+            try self.db.put(addr, try @import("state.zig").AccountState.init(self.allocator, addr, 0, 0, &[_]u8{}));
+            break :blk self.db.getPtr(addr).?;
+        };
         if (std.mem.eql(u8, &value, &std.mem.zeroes(Bytes32))) {
             _ = account.storage.remove(key);
             return;
@@ -128,7 +131,10 @@ pub const StateDB = struct {
     }
 
     pub fn incrementNonce(self: *StateDB, addr: Address) !void {
-        var account = self.db.getPtr(addr) orelse return error.AccountDoesNotExist;
+        var account = self.db.getPtr(addr) orelse blk: {
+            try self.db.put(addr, try @import("state.zig").AccountState.init(self.allocator, addr, 0, 0, &[_]u8{}));
+            break :blk self.db.getPtr(addr).?;
+        };
         account.nonce += 1;
     }
 

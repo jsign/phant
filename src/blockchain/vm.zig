@@ -120,6 +120,7 @@ pub const VM = struct {
             .gas_left = @intCast(result.gas_left),
             .refund_counter = @intCast(result.gas_refund),
             .success = result.status_code == evmc.EVMC_SUCCESS,
+            .logs = if (self.env.logs) |l| l.items[0..l.items.len] else &[_]@import("../types/receipt.zig").Log{},
         };
     }
 };
@@ -337,14 +338,22 @@ const EVMOneHost = struct {
         topics: [*c]const evmc.evmc_bytes32,
         topics_count: usize,
     ) callconv(.c) void {
-        _ = topics_count;
-        _ = topics;
-        _ = data_size;
-        _ = data;
-        _ = addr;
-        _ = ctx;
-        // https://evmc.ethereum.org/group__EVMC.html#gaab96621b67d653758b3da15c2b596938
-        // TODO: implement LOG — no-op for now
+        const vm_inst: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        if (vm_inst.env.logs) |logs| {
+            const log_topics = vm_inst.allocator.alloc(types.Hash32, topics_count) catch @panic("OOM in emit_log");
+            for (0..topics_count) |i| {
+                log_topics[i] = topics[i].bytes;
+            }
+            const log_data = if (data_size > 0)
+                (vm_inst.allocator.dupe(u8, data[0..data_size]) catch @panic("OOM in emit_log"))
+            else
+                @as([]u8, &[_]u8{});
+            logs.append(.{
+                .address = fromEVMCAddress(addr.*),
+                .topics = log_topics,
+                .data = log_data,
+            }) catch @panic("OOM in emit_log");
+        }
     }
 
     fn access_account(ctx: ?*evmc.struct_evmc_host_context, addr: [*c]const evmc.evmc_address) callconv(.c) evmc.enum_evmc_access_status {
@@ -434,6 +443,12 @@ const EVMOneHost = struct {
         if (msg.kind == evmc.EVMC_CREATE or msg.kind == evmc.EVMC_CREATE2) {
             // Increment the nonce of the contract creator.
             vm.env.state.incrementNonce(sender) catch unreachable;
+            // Ensure the new contract account exists in StateDB before executing code.
+            if (vm.env.state.getAccountOpt(recipient) == null) {
+                vm.env.state.setBalance(recipient, 0) catch |err| switch (err) {
+                    error.OutOfMemory => @panic("OOO"),
+                };
+            }
         }
 
         // Persist current context in case we need it for scope revert.
@@ -470,7 +485,7 @@ const EVMOneHost = struct {
             vm.evm,
             @ptrCast(&vm.host),
             @ptrCast(vm),
-            evmc.EVMC_SHANGHAI, // TODO: generalize from block_number.
+            @intCast(vm.env.evmc_revision),
             &msg,
             code.ptr,
             code.len,
@@ -562,6 +577,6 @@ pub const MessageCallOutput = struct {
     success: bool,
     gas_left: u64,
     refund_counter: u64,
-    // logs: Union[Tuple[()], Tuple[Log, ...]] TODO
+    logs: []const @import("../types/receipt.zig").Log = &[_]@import("../types/receipt.zig").Log{}, TODO
     // accounts_to_delete: AddressKeySet, // TODO (delete?)
 };

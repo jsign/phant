@@ -1,3 +1,5 @@
+const receipt = @import("../types/receipt.zig");
+const Log = receipt.Log;
 const types = @import("../types/types.zig");
 const config = @import("../config/config.zig");
 const common = @import("../common/common.zig");
@@ -22,6 +24,8 @@ pub const Environment = struct {
     prev_randao: Bytes32,
     state: *StateDB,
     chain_id: config.ChainId,
+    evmc_revision: u8 = 11, // EVMC_SHANGHAI by default
+    logs: ?*std.ArrayList(Log) = null,
 };
 
 pub const Message = struct {
