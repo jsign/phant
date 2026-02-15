@@ -79,7 +79,27 @@ pub const FixtureTest = struct {
         var out = try allocator.alloc(u8, self.genesisRLP.len / 2);
         var rlp_bytes = try std.fmt.hexToBytes(out, self.genesisRLP[2..]);
         const parent_block = try Block.decode(allocator, rlp_bytes);
-        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, try Fork.frontier.newFrontierFork(allocator));
+        // Select fork based on network
+        const fork = blk2: {
+            const pre_prague = [_][]const u8{
+                "Frontier", "Homestead", "EIP150", "EIP158", "Byzantium",
+                "Constantinople", "ConstantinopleFix", "Istanbul", "Berlin",
+                "London", "Paris", "Shanghai", "Cancun",
+                "FrontierToHomesteadAt5", "HomesteadToEIP150At5",
+                "HomesteadToDaoAt5", "EIP158ToByzantiumAt5",
+                "ByzantiumToConstantinopleFixAt5",
+            };
+            for (pre_prague) |name| {
+                if (std.mem.eql(u8, self.network, name)) {
+                    break :blk2 try Fork.frontier.newFrontierFork(allocator);
+                }
+            }
+            if (std.mem.eql(u8, self.network, "Prague")) {
+                break :blk2 try Fork.prague.enablePrague(&statedb, null, allocator);
+            }
+            return error.UnsupportedNetwork;
+        };
+        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, fork);
 
         // Execute blocks.
         for (self.blocks) |encoded_block| {
