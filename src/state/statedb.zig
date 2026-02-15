@@ -61,9 +61,13 @@ pub const StateDB = struct {
 
     pub fn startTx(self: *StateDB) !void {
         if (self.original_db) |*original_db| {
+            var it = original_db.iterator();
+            while (it.next()) |kv| {
+                kv.value_ptr.deinit();
+            }
             original_db.deinit();
         }
-        self.original_db = try self.db.clone();
+        self.original_db = try dbDeepClone(self.allocator, &self.db);
         self.accessed_accounts.clearRetainingCapacity();
         self.accessed_storage_keys.clearRetainingCapacity();
     }
@@ -171,7 +175,7 @@ pub const StateDB = struct {
     }
 
     pub fn putAccessedStorageKeys(self: *StateDB, addrkey: AddressKey) !void {
-        try self.accessed_storage_keys.putNoClobber(addrkey, {});
+        try self.accessed_storage_keys.put(addrkey, {});
     }
 
     pub fn snapshot(self: *StateDB) !StateDB {
