@@ -28,6 +28,8 @@ pub const StateDB = struct {
     touched_addresses: ArrayList(Address),
     accessed_accounts: AddressSet,
     accessed_storage_keys: AddressKeySet,
+    created_accounts: AddressSet,
+    accounts_to_destroy: AddressSet,
 
     pub fn init(allocator: Allocator, accounts: []const AccountState) !StateDB {
         var db = AccountDB.init(allocator);
@@ -41,6 +43,8 @@ pub const StateDB = struct {
             .accessed_accounts = AddressSet.init(allocator),
             .accessed_storage_keys = AddressKeySet.init(allocator),
             .touched_addresses = ArrayList(Address).init(allocator),
+            .created_accounts = AddressSet.init(allocator),
+            .accounts_to_destroy = AddressSet.init(allocator),
         };
     }
 
@@ -53,6 +57,8 @@ pub const StateDB = struct {
 
         self.accessed_accounts.deinit();
         self.accessed_storage_keys.deinit();
+        self.created_accounts.deinit();
+        self.accounts_to_destroy.deinit();
 
         if (self.original_db) |*original_db| {
             original_db.deinit();
@@ -70,6 +76,8 @@ pub const StateDB = struct {
         self.original_db = try dbDeepClone(self.allocator, &self.db);
         self.accessed_accounts.clearRetainingCapacity();
         self.accessed_storage_keys.clearRetainingCapacity();
+        self.created_accounts.clearRetainingCapacity();
+        self.accounts_to_destroy.clearRetainingCapacity();
     }
 
     pub fn isEmpty(self: StateDB, addr: Address) bool {
@@ -178,6 +186,18 @@ pub const StateDB = struct {
         try self.accessed_storage_keys.put(addrkey, {});
     }
 
+    pub fn markCreated(self: *StateDB, addr: Address) !void {
+        try self.created_accounts.put(addr, {});
+    }
+
+    pub fn markSelfDestructed(self: *StateDB, addr: Address) !void {
+        try self.accounts_to_destroy.put(addr, {});
+    }
+
+    pub fn wasCreatedInTx(self: *StateDB, addr: Address) bool {
+        return self.created_accounts.contains(addr);
+    }
+
     pub fn snapshot(self: *StateDB) !StateDB {
         // TODO: while simple this is quite inefficient.
         // A much smarter way is doing some "diff" style snapshotting or similar.
@@ -188,6 +208,8 @@ pub const StateDB = struct {
             .accessed_accounts = try self.accessed_accounts.clone(),
             .accessed_storage_keys = try self.accessed_storage_keys.clone(),
             .touched_addresses = try self.touched_addresses.clone(),
+            .created_accounts = try self.created_accounts.clone(),
+            .accounts_to_destroy = try self.accounts_to_destroy.clone(),
         };
     }
 

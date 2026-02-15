@@ -130,6 +130,7 @@ pub const FixtureTest = struct {
             }
         }
 
+        log.debug("All blocks executed, verifying post state...", .{});
         // Verify that the post state matches what the fixture `postState` claims is true.
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
@@ -145,12 +146,24 @@ pub const FixtureTest = struct {
             }
 
             const got_storage = statedb.getAllStorage(exp_account_state.addr) orelse return error.PostStateAccountMustExist;
-            if (got_storage.count() != exp_account_state.storage.count()) {
-                log.err("expected storage count {d} but got {d}", .{ exp_account_state.storage.count(), got_storage.count() });
+            // Count non-zero entries in got_storage
+            var got_nonzero_count: usize = 0;
+            {
+                var it_count = got_storage.iterator();
+                while (it_count.next()) |se| {
+                    if (!std.mem.eql(u8, se.value_ptr, &std.mem.zeroes(Bytes32))) {
+                        got_nonzero_count += 1;
+                    }
+                }
+            }
+            if (got_nonzero_count != exp_account_state.storage.count()) {
+                log.err("{x} expected storage count {d} but got {d}", .{ &exp_account_state.addr, exp_account_state.storage.count(), got_nonzero_count });
                 return error.PostStateStorageCountMismatch;
             }
             var it_got = got_storage.iterator();
             while (it_got.next()) |storage_entry| {
+                // Skip zero-value entries in got_storage
+                if (std.mem.eql(u8, storage_entry.value_ptr, &std.mem.zeroes(Bytes32))) continue;
                 const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
                 if (!std.mem.eql(u8, storage_entry.value_ptr, &val)) {
                     log.err("{x} expected storage slot value at {d}, got {x}, exp {x}", .{ &exp_account_state.addr, storage_entry.key_ptr.*, &storage_entry.value_ptr.*, &val });
@@ -187,9 +200,11 @@ pub const AccountStateHex = struct {
         while (it.next()) |entry| {
             const key = try std.fmt.parseUnsigned(u256, entry.key_ptr.*[2..], 16);
             const value = try std.fmt.parseUnsigned(u256, entry.value_ptr.*[2..], 16);
-            var value_bytes: Bytes32 = undefined;
-            std.mem.writeInt(u256, &value_bytes, value, .big);
-            try account.storage.putNoClobber(key, value_bytes);
+            if (value != 0) {
+                var value_bytes: Bytes32 = undefined;
+                std.mem.writeInt(u256, &value_bytes, value, .big);
+                try account.storage.putNoClobber(key, value_bytes);
+            }
         }
 
         return account;

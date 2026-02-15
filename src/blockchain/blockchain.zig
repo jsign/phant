@@ -73,7 +73,9 @@ pub const Blockchain = struct {
         try self.fork.update_parent_block_hash(block.header.block_number - 1, block.header.parent_hash);
 
         // Execute block.
+        std.log.debug("runBlock: calling applyBody for block {d}", .{block.header.block_number});
         var result = try applyBody(allocator, self, self.state, block, self.tx_signer);
+        std.log.debug("runBlock: applyBody done", .{});
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used) {
@@ -165,6 +167,7 @@ pub const Blockchain = struct {
     };
 
     fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, tx_signer: TxSigner) !BlockExecutionResult {
+        std.log.debug("applyBody: start block {d}, {d} txs", .{block.header.block_number, block.transactions.len});
         var gas_available = block.header.gas_limit;
 
         var receipts = try allocator.alloc(Receipt, block.transactions.len);
@@ -236,8 +239,10 @@ pub const Blockchain = struct {
                 .evmc_revision = chain.evmc_revision,
             };
 
+            std.log.debug("applyBody: processing tx {d}", .{i});
             try state.startTx();
             const exec_tx_result = try processTransaction(allocator, env, tx);
+            std.log.debug("applyBody: tx {d} done", .{i});
             gas_available -= exec_tx_result.gas_used;
 
             // Create receipt.
@@ -253,6 +258,7 @@ pub const Blockchain = struct {
             // TODO: do tx logs aggregation.
         }
 
+        std.log.debug("applyBody: all txs done, computing roots", .{});
         const block_gas_used = block.header.gas_limit - gas_available;
 
         // TODO: logs bloom calculation.
@@ -402,9 +408,11 @@ pub const Blockchain = struct {
             env.state.destroyAccount(env.coinbase);
         }
 
-        // TODO: self destruct processing
-        // for address in output.accounts_to_delete:
-        //  destroy_account(env.state, address)
+        // EIP-6780: destroy accounts that selfdestructed and were created in same tx
+        var destroy_it = env.state.accounts_to_destroy.keyIterator();
+        while (destroy_it.next()) |addr| {
+            env.state.destroyAccount(addr.*);
+        }
 
         for (env.state.touched_addresses.items) |address| {
             if (env.state.isEmpty(address))

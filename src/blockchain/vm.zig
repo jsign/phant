@@ -151,7 +151,7 @@ const EVMOneHost = struct {
         evmclog.debug("getBlockHash block_number={}", .{block_number});
 
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
-        const idx = vm.env.number - @as(u64, @intCast(block_number));
+        const idx = @as(u64, @intCast(block_number));
         return .{ .bytes = vm.env.fork.get_parent_block_hash(idx) catch @panic("unhandled error getting parent hash") };
     }
 
@@ -319,12 +319,28 @@ const EVMOneHost = struct {
         addr: [*c]const evmc.evmc_address,
         addr2: [*c]const evmc.evmc_address,
     ) callconv(.c) bool {
-        _ = addr2;
-        _ = addr;
-        _ = ctx;
-        // https://evmc.ethereum.org/group__EVMC.html#ga1aa9fa657b3f0de375e2f07e53b65bcc
-        // TODO: implement SELFDESTRUCT — returning false (not destroyed) as no-op
-        return false;
+        const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
+        const address = fromEVMCAddress(addr.*);
+        const beneficiary = fromEVMCAddress(addr2.*);
+
+        // Transfer balance to beneficiary
+        const balance = vm.env.state.getAccount(address).balance;
+        if (balance > 0) {
+            const ben_balance = vm.env.state.getAccount(beneficiary).balance;
+            vm.env.state.setBalance(beneficiary, ben_balance + balance) catch @panic("OOM in selfdestruct");
+            vm.env.state.setBalance(address, 0) catch @panic("OOM in selfdestruct");
+        }
+
+        // EIP-6780 (Cancun): only actually destroy if created in same tx
+        const created_in_tx = vm.env.state.wasCreatedInTx(address);
+        if (created_in_tx) {
+            vm.env.state.markSelfDestructed(address) catch @panic("OOM in selfdestruct");
+        }
+
+        vm.env.state.addTouchedAddress(address) catch @panic("OOM in selfdestruct");
+        vm.env.state.addTouchedAddress(beneficiary) catch @panic("OOM in selfdestruct");
+
+        return created_in_tx;
     }
 
     fn emit_log(
@@ -446,6 +462,8 @@ const EVMOneHost = struct {
                     error.OutOfMemory => @panic("OOO"),
                 };
             }
+            // EIP-6780: track accounts created in this tx
+            vm.env.state.markCreated(recipient) catch @panic("OOM markCreated");
         }
 
         // Persist current context in case we need it for scope revert.
