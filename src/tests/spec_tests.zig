@@ -40,9 +40,9 @@ pub const Fixture = struct {
 
 pub const FixtureTest = struct {
     _info: struct {
-        @"filling-transition-tool": []const u8,
-        @"reference-spec": []const u8,
-        @"reference-spec-version": []const u8,
+        @"filling-transition-tool": ?[]const u8 = null,
+        @"reference-spec": ?[]const u8 = null,
+        @"reference-spec-version": ?[]const u8 = null,
     },
     network: []const u8,
     genesisRLP: HexString,
