@@ -1,0 +1,28 @@
+.{
+    .name = .phant,
+    .version = "0.0.1-beta-0",
+    .fingerprint = 0x24619a25ace37d16,
+    .dependencies = .{
+        .zigrlp = .{
+            .url = "https://github.com/gballet/zig-rlp/archive/refs/tags/v0.1.1-beta7.tar.gz",
+            .hash = "12201b3645a414dffc2bca872a1467b549d0029b9e36c80fcaeb22a06ec27fab9aee",
+        },
+        .zigethsecp256k1 = .{
+            .url = "https://github.com/jsign/zig-eth-secp256k1/archive/6cf0d1f.tar.gz",
+            .hash = "1220e3c49d0a2e0e7e84dcc3f8ca00b357af526a8ea28d3c848001d72bda4ddc1e66",
+        },
+        .httpz = .{
+            .url = "https://github.com/karlseguin/http.zig/archive/46753ab.tar.gz",
+            .hash = "12207dbe64a04fb960156cbc990153cb3637a08e3fe23077c7199621b5c6377f5d20",
+        },
+        .zigcli = .{
+            .url = "https://github.com/jiacai2050/zigcli/archive/54d095c.tar.gz",
+            .hash = "1220e8fb37224ab6ee9c575129594a808643b548596d63dd8b87cb42e22a7eed9f51",
+        },
+        .zevem = .{
+            .url = "https://github.com/gballet/zevem/archive/3ce1930.tar.gz",
+            .hash = "1220be22307447ddcb715ab71e14cd58e00215408bc235fb143a58fa8a4b51fd72ae",
+        },
+    },
+    .paths = .{""},
+}
