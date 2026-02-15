@@ -84,7 +84,7 @@ pub const TxSigner = struct {
                 var out = std.array_list.Managed(u8).init(allocator);
                 defer out.deinit();
 
-                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest)) {
+                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest) and itx.v != 27 and itx.v != 28) {
                     // Post EIP-155 (since ~Nov 2016).
                     const LegacyTxRLP = struct {
                         nonce: u64,

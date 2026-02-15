@@ -120,7 +120,7 @@ pub const VM = struct {
             .gas_left = @intCast(result.gas_left),
             .refund_counter = @intCast(result.gas_refund),
             .success = result.status_code == evmc.EVMC_SUCCESS,
-            .logs = if (self.env.logs) |l| l.items[0..l.items.len] else &[_]@import("../types/receipt.zig").Log{},
+            .logs = if (self.env.logs) |l| l.items[0..l.items.len] else &[_]types.Log{},
         };
     }
 };
@@ -255,9 +255,6 @@ const EVMOneHost = struct {
         };
 
         vm.env.state.setStorage(address, k, value.*.bytes) catch |err| switch (err) {
-            // From EVMC docs: "The VM MUST make sure that the account exists. This requirement is only a formality
-            // because VM implementations only modify storage of the account of the current execution context".
-            error.AccountDoesNotExist => @panic("set storage in non-existent account"),
             error.OutOfMemory => @panic("OOO"),
         };
 
@@ -577,6 +574,5 @@ pub const MessageCallOutput = struct {
     success: bool,
     gas_left: u64,
     refund_counter: u64,
-    logs: []const @import("../types/receipt.zig").Log = &[_]@import("../types/receipt.zig").Log{}, TODO
-    // accounts_to_delete: AddressKeySet, // TODO (delete?)
+    logs: []const types.Log = &[_]types.Log{},
 };

@@ -119,10 +119,12 @@ pub const FixtureTest = struct {
             const block_should_fail = if (encoded_block.expectException) |_| true else false;
             if (chain.runBlock(block)) |_| {
                 if (block_should_fail) {
+                    log.err("block execution succeeded but expected failure", .{});
                     return error.BlockExecutionValidityExpectationMismatch;
                 }
-            } else |_| {
+            } else |err| {
                 if (!block_should_fail) {
+                    log.err("block execution failed unexpectedly: {}", .{err});
                     return error.BlockExecutionValidityExpectationMismatch;
                 }
             }

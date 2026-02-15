@@ -26,7 +26,7 @@ const Bytes32 = types.Bytes32;
 const Address = types.Address;
 const Receipt = types.Receipt;
 const Log = types.Log;
-const LogArrayList = std.ArrayList(Log);
+const LogArrayList = std.array_list.Managed(Log);
 const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
@@ -49,7 +49,6 @@ pub const Blockchain = struct {
         state: *StateDB,
         prev_block: BlockHeader,
         fork: *Fork,
-    evmc_revision: u8 = 11,
     ) !Blockchain {
         return .{
             .allocator = allocator,
@@ -77,20 +76,28 @@ pub const Blockchain = struct {
         var result = try applyBody(allocator, self, self.state, block, self.tx_signer);
 
         // Post execution checks.
-        if (result.gas_used != block.header.gas_used)
+        if (result.gas_used != block.header.gas_used) {
+            std.log.err("gas_used mismatch: got {d}, expected {d}", .{ result.gas_used, block.header.gas_used });
             return error.InvalidGasUsed;
-        if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
+        }
+        if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root)) {
+            std.log.err("transactions_root mismatch", .{});
             return error.InvalidTransactionsRoot;
-        if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root))
+        }
+        if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root)) {
+            std.log.err("receipts_root mismatch: got {x}, expected {x}", .{ &result.receipts_root, &block.header.receipts_root });
             return error.InvalidReceiptsRoot;
+        }
         // TODO: disabled until state root is calculated
         // if (!std.mem.eql(u8, &self.state.root(), &block.header.state_root))
         //     return error.InvalidStateRoot;
         // TODO: disabled until logs bloom are calculated
         // if (!std.mem.eql(u8, &result.logs_bloom, &block.header.logs_bloom))
         //     return error.InvalidLogsBloom;
-        if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root.?))
+        if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root.?)) {
+            std.log.err("withdrawals_root mismatch", .{});
             return error.InvalidWithdrawalsRoot;
+        }
 
         // Note that we free and clone with the Blockchain allocator, and not the arena allocator.
         // This is required since Blockchain field lifetimes are longer than the block execution processing.
@@ -163,6 +170,54 @@ pub const Blockchain = struct {
         var receipts = try allocator.alloc(Receipt, block.transactions.len);
         defer allocator.free(receipts);
 
+        // EIP-4788: Beacon block root system call (Cancun+)
+        if (block.header.parent_beacon_root) |parent_beacon_root| {
+            try state.startTx();
+            const beacon_root_addr: Address = .{ 0x00, 0x0f, 0x3d, 0xf6, 0xd7, 0x32, 0x80, 0x7e, 0xf1, 0x31, 0x9f, 0xb7, 0xb8, 0xbb, 0x85, 0x22, 0xd0, 0xbe, 0xac, 0x02 };
+            const system_addr: Address = .{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe };
+
+            // Call the beacon root contract with timestamp as input
+            var timestamp_input: [32]u8 = std.mem.zeroes([32]u8);
+            std.mem.writeInt(u256, &timestamp_input, block.header.timestamp, .big);
+
+            const sys_env: Environment = .{
+                .fork = chain.fork,
+                .origin = system_addr,
+                .coinbase = block.header.fee_recipient,
+                .number = block.header.block_number,
+                .gas_limit = block.header.gas_limit,
+                .base_fee_per_gas = block.header.base_fee_per_gas.?,
+                .gas_price = 0,
+                .time = block.header.timestamp,
+                .prev_randao = block.header.prev_randao,
+                .state = state,
+                .chain_id = chain.chain_id,
+                .evmc_revision = chain.evmc_revision,
+            };
+
+            // Ensure system address exists
+            if (state.getAccountOpt(system_addr) == null) {
+                try state.setBalance(system_addr, 0);
+            }
+
+            const sys_msg: Message = .{
+                .sender = system_addr,
+                .target = beacon_root_addr,
+                .gas = 30_000_000,
+                .value = 0,
+                .data = &parent_beacon_root,
+            };
+
+            var vm_instance = VM.init(allocator, sys_env);
+            defer vm_instance.deinit();
+            _ = try vm_instance.processMessageCall(sys_msg);
+
+            // Remove system address if empty (EIP-4788 spec)
+            if (state.accountExistsAndIsEmpty(system_addr)) {
+                state.destroyAccount(system_addr);
+            }
+        }
+
         for (block.transactions, 0..) |tx, i| {
             const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas.?, gas_available, tx_signer);
 
@@ -187,7 +242,13 @@ pub const Blockchain = struct {
 
             // Create receipt.
             const cumm_gas_used = block.header.gas_limit - gas_available;
-            receipts[i] = Receipt.init(exec_tx_result.success, cumm_gas_used, @constCast(exec_tx_result.logs));
+            var receipt = Receipt.init(exec_tx_result.success, cumm_gas_used, @constCast(exec_tx_result.logs));
+            receipt.tx_type = switch (tx) {
+                .LegacyTx => 0,
+                .AccessListTx => 1,
+                .FeeMarketTx => 2,
+            };
+            receipts[i] = receipt;
 
             // TODO: do tx logs aggregation.
         }
@@ -265,7 +326,7 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64, logs: []const Log = &[_]Log{} } {
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64, logs: []const Log } {
         if (!validateTransaction(tx))
             return error.InvalidTransaction;
 
@@ -276,8 +337,10 @@ pub const Blockchain = struct {
         var sender_account = env.state.getAccount(sender);
         if (sender_account.nonce != tx.getNonce())
             return error.InvalidTxNonce;
-        if (sender_account.balance < gas_fee + tx.getValue())
+        if (sender_account.balance < gas_fee + tx.getValue()) {
+            std.log.err("NotEnoughBalance: sender={x} balance={d}, gas_fee={d}, value={d}, total_needed={d}, nonce={d}", .{ &env.origin, sender_account.balance, gas_fee, tx.getValue(), gas_fee + tx.getValue(), sender_account.nonce });
             return error.NotEnoughBalance;
+        }
         if (sender_account.code.len > 0)
             return error.SenderIsNotEOA;
 

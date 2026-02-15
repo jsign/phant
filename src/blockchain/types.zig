@@ -1,3 +1,4 @@
+const std = @import("std");
 const receipt = @import("../types/receipt.zig");
 const Log = receipt.Log;
 const types = @import("../types/types.zig");
@@ -25,7 +26,7 @@ pub const Environment = struct {
     state: *StateDB,
     chain_id: config.ChainId,
     evmc_revision: u8 = 11, // EVMC_SHANGHAI by default
-    logs: ?*std.ArrayList(Log) = null,
+    logs: ?*std.array_list.Managed(Log) = null,
 };
 
 pub const Message = struct {
