@@ -26,6 +26,7 @@ const Bytes32 = types.Bytes32;
 const Address = types.Address;
 const Receipt = types.Receipt;
 const Log = types.Log;
+const LogArrayList = std.array_list.Managed(Log);
 const TxSigner = signer.TxSigner;
 const VM = vm.VM;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
@@ -38,6 +39,7 @@ pub const Blockchain = struct {
     prev_block: BlockHeader,
     tx_signer: TxSigner,
     fork: *Fork,
+    evmc_revision: u8 = 11,
 
     // init initializes a blockchain.
     // The caller **does not** transfer ownership of prev_block.
@@ -71,23 +73,33 @@ pub const Blockchain = struct {
         try self.fork.update_parent_block_hash(block.header.block_number - 1, block.header.parent_hash);
 
         // Execute block.
+        std.log.debug("runBlock: calling applyBody for block {d}", .{block.header.block_number});
         var result = try applyBody(allocator, self, self.state, block, self.tx_signer);
+        std.log.debug("runBlock: applyBody done", .{});
 
         // Post execution checks.
-        if (result.gas_used != block.header.gas_used)
+        if (result.gas_used != block.header.gas_used) {
+            std.log.err("gas_used mismatch in block {d}: got {d}, expected {d}", .{ block.header.block_number, result.gas_used, block.header.gas_used });
             return error.InvalidGasUsed;
-        if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root))
+        }
+        if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root)) {
+            std.log.err("transactions_root mismatch", .{});
             return error.InvalidTransactionsRoot;
-        if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root))
+        }
+        if (!std.mem.eql(u8, &result.receipts_root, &block.header.receipts_root)) {
+            std.log.err("receipts_root mismatch: got {x}, expected {x}", .{ &result.receipts_root, &block.header.receipts_root });
             return error.InvalidReceiptsRoot;
+        }
         // TODO: disabled until state root is calculated
         // if (!std.mem.eql(u8, &self.state.root(), &block.header.state_root))
         //     return error.InvalidStateRoot;
         // TODO: disabled until logs bloom are calculated
         // if (!std.mem.eql(u8, &result.logs_bloom, &block.header.logs_bloom))
         //     return error.InvalidLogsBloom;
-        if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root.?))
+        if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root.?)) {
+            std.log.err("withdrawals_root mismatch", .{});
             return error.InvalidWithdrawalsRoot;
+        }
 
         // Note that we free and clone with the Blockchain allocator, and not the arena allocator.
         // This is required since Blockchain field lifetimes are longer than the block execution processing.
@@ -115,7 +127,9 @@ pub const Blockchain = struct {
             const base_fee_per_gas_delta = prev_block.base_fee_per_gas.? * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator;
             break :blk prev_block.base_fee_per_gas.? - base_fee_per_gas_delta;
         };
-        if (expected_base_fee_per_gas != curr_block.base_fee_per_gas)
+        const expected_val = expected_base_fee_per_gas orelse 0;
+        const actual_val = curr_block.base_fee_per_gas orelse 0;
+        if (expected_val != actual_val)
             return error.InvalidBaseFee;
 
         if (curr_block.timestamp <= prev_block.timestamp)
@@ -153,10 +167,59 @@ pub const Blockchain = struct {
     };
 
     fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, tx_signer: TxSigner) !BlockExecutionResult {
+        std.log.debug("applyBody: start block {d}, {d} txs", .{block.header.block_number, block.transactions.len});
         var gas_available = block.header.gas_limit;
 
         var receipts = try allocator.alloc(Receipt, block.transactions.len);
         defer allocator.free(receipts);
+
+        // EIP-4788: Beacon block root system call (Cancun+)
+        if (block.header.parent_beacon_root) |parent_beacon_root| {
+            try state.startTx();
+            const beacon_root_addr: Address = .{ 0x00, 0x0f, 0x3d, 0xf6, 0xd7, 0x32, 0x80, 0x7e, 0xf1, 0x31, 0x9f, 0xb7, 0xb8, 0xbb, 0x85, 0x22, 0xd0, 0xbe, 0xac, 0x02 };
+            const system_addr: Address = .{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe };
+
+            // Call the beacon root contract with timestamp as input
+            var timestamp_input: [32]u8 = std.mem.zeroes([32]u8);
+            std.mem.writeInt(u256, &timestamp_input, block.header.timestamp, .big);
+
+            const sys_env: Environment = .{
+                .fork = chain.fork,
+                .origin = system_addr,
+                .coinbase = block.header.fee_recipient,
+                .number = block.header.block_number,
+                .gas_limit = block.header.gas_limit,
+                .base_fee_per_gas = block.header.base_fee_per_gas.?,
+                .gas_price = 0,
+                .time = block.header.timestamp,
+                .prev_randao = block.header.prev_randao,
+                .state = state,
+                .chain_id = chain.chain_id,
+                .evmc_revision = chain.evmc_revision,
+            };
+
+            // Ensure system address exists
+            if (state.getAccountOpt(system_addr) == null) {
+                try state.setBalance(system_addr, 0);
+            }
+
+            const sys_msg: Message = .{
+                .sender = system_addr,
+                .target = beacon_root_addr,
+                .gas = 30_000_000,
+                .value = 0,
+                .data = &parent_beacon_root,
+            };
+
+            var vm_instance = VM.init(allocator, sys_env);
+            defer vm_instance.deinit();
+            _ = try vm_instance.processMessageCall(sys_msg);
+
+            // Remove system address if empty (EIP-4788 spec)
+            if (state.accountExistsAndIsEmpty(system_addr)) {
+                state.destroyAccount(system_addr);
+            }
+        }
 
         for (block.transactions, 0..) |tx, i| {
             const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas.?, gas_available, tx_signer);
@@ -173,19 +236,29 @@ pub const Blockchain = struct {
                 .prev_randao = block.header.prev_randao,
                 .state = state,
                 .chain_id = chain.chain_id,
+                .evmc_revision = chain.evmc_revision,
             };
 
+            std.log.debug("applyBody: processing tx {d}", .{i});
             try state.startTx();
             const exec_tx_result = try processTransaction(allocator, env, tx);
+            std.log.debug("applyBody: tx {d} done", .{i});
             gas_available -= exec_tx_result.gas_used;
 
             // Create receipt.
             const cumm_gas_used = block.header.gas_limit - gas_available;
-            receipts[i] = Receipt.init(exec_tx_result.success, cumm_gas_used, &[_]Log{});
+            var receipt = Receipt.init(exec_tx_result.success, cumm_gas_used, @constCast(exec_tx_result.logs));
+            receipt.tx_type = switch (tx) {
+                .LegacyTx => 0,
+                .AccessListTx => 1,
+                .FeeMarketTx => 2,
+            };
+            receipts[i] = receipt;
 
             // TODO: do tx logs aggregation.
         }
 
+        std.log.debug("applyBody: all txs done, computing roots", .{});
         const block_gas_used = block.header.gas_limit - gas_available;
 
         // TODO: logs bloom calculation.
@@ -223,7 +296,7 @@ pub const Blockchain = struct {
         }
 
         while (i < items.len) : (i += 1) {
-            var out = std.ArrayList(u8).init(arena);
+            var out = std.array_list.Managed(u8).init(arena);
             defer out.deinit();
             try rlp.serialize(usize, arena, i, &out);
 
@@ -259,8 +332,8 @@ pub const Blockchain = struct {
         return .{ .sender_address = sender_address, .effective_gas_price = effective_gas_price };
     }
 
-    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64 } {
-        if (!validateTransaction(tx))
+    fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64, logs: []const Log } {
+        if (!validateTransaction(tx, env.evmc_revision))
             return error.InvalidTransaction;
 
         const sender = env.origin;
@@ -270,8 +343,10 @@ pub const Blockchain = struct {
         var sender_account = env.state.getAccount(sender);
         if (sender_account.nonce != tx.getNonce())
             return error.InvalidTxNonce;
-        if (sender_account.balance < gas_fee + tx.getValue())
+        if (sender_account.balance < gas_fee + tx.getValue()) {
+            std.log.err("NotEnoughBalance: sender={x} balance={d}, gas_fee={d}, value={d}, total_needed={d}, nonce={d}", .{ &env.origin, sender_account.balance, gas_fee, tx.getValue(), gas_fee + tx.getValue(), sender_account.nonce });
             return error.NotEnoughBalance;
+        }
         if (sender_account.code.len > 0)
             return error.SenderIsNotEOA;
 
@@ -307,15 +382,27 @@ pub const Blockchain = struct {
             .value = tx.getValue(),
             .data = tx.getData(),
         };
-        const output = try processMessageCall(allocator, message, env);
+        var logs_list = LogArrayList.init(allocator);
+        var env_with_logs = env;
+        env_with_logs.logs = &logs_list;
+        const output = try processMessageCall(allocator, message, env_with_logs);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
-        const gas_refund_amount = (output.gas_left + gas_refund) * env.gas_price;
+        const standard_gas_used = gas_used - gas_refund;
+
+        // EIP-7623 (Prague+): floor cost for calldata-heavy transactions
+        // tx.gasUsed = 21000 + max(standard_tokens*4 + exec_gas + create,
+        //                          tokens * 10)
+        const total_gas_used = if (env.evmc_revision >= 13)
+            @max(standard_gas_used, calculateFloorCost(tx))
+        else
+            standard_gas_used;
+
+        const gas_refund_amount = (tx.getGasLimit() - total_gas_used) * env.gas_price;
 
         const priority_fee_per_gas = env.gas_price - env.base_fee_per_gas;
-        const transaction_fee = (gas_used - gas_refund) * priority_fee_per_gas;
-        const total_gas_used = gas_used - gas_refund;
+        const transaction_fee = total_gas_used * priority_fee_per_gas;
 
         sender_account = env.state.getAccount(sender);
         const sender_balance_after_refund = sender_account.balance + gas_refund_amount;
@@ -330,20 +417,26 @@ pub const Blockchain = struct {
             env.state.destroyAccount(env.coinbase);
         }
 
-        // TODO: self destruct processing
-        // for address in output.accounts_to_delete:
-        //  destroy_account(env.state, address)
+        // EIP-6780: destroy accounts that selfdestructed and were created in same tx
+        var destroy_it = env.state.accounts_to_destroy.keyIterator();
+        while (destroy_it.next()) |addr| {
+            env.state.destroyAccount(addr.*);
+        }
 
         for (env.state.touched_addresses.items) |address| {
             if (env.state.isEmpty(address))
                 env.state.destroyAccount(address);
         }
 
-        return .{ .success = output.success, .gas_used = total_gas_used };
+        return .{ .success = output.success, .gas_used = total_gas_used, .logs = output.logs };
     }
 
-    fn validateTransaction(tx: transaction.Tx) bool {
-        if (calculateIntrinsicCost(tx) > tx.getGasLimit())
+    fn validateTransaction(tx: transaction.Tx, evmc_revision: u8) bool {
+        const min_gas = if (evmc_revision >= 13)
+            @max(calculateIntrinsicCost(tx), calculateFloorCost(tx))
+        else
+            calculateIntrinsicCost(tx);
+        if (min_gas > tx.getGasLimit())
             return false;
         if (tx.getNonce() >= (2 << 64) - 1)
             return false;
@@ -352,28 +445,54 @@ pub const Blockchain = struct {
         return true;
     }
 
+    fn calldataTokens(tx: transaction.Tx) u64 {
+        var tokens: u64 = 0;
+        for (tx.getData()) |byte| {
+            tokens += if (byte == 0) params.tx_tokens_per_zero_byte else params.tx_tokens_per_non_zero_byte;
+        }
+        return tokens;
+    }
+
     fn calculateIntrinsicCost(tx: transaction.Tx) u64 {
         var data_cost: u64 = 0;
-        const data = tx.getData();
-        for (data) |byte| {
+        for (tx.getData()) |byte| {
             data_cost += if (byte == 0) params.tx_data_cost_per_zero else params.tx_data_cost_per_non_zero;
         }
 
-        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(data.len) else 0;
+        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(tx.getData().len) else 0;
 
-        const access_list_cost = switch (tx) {
-            .LegacyTx => 0,
-            inline else => |al_tx| blk: {
-                const sum: u64 = 0;
+        var access_list_cost: u64 = 0;
+        switch (tx) {
+            .LegacyTx => {},
+            inline else => |al_tx| {
                 for (al_tx.access_list) |al| {
-                    data_cost += params.tx_access_list_address_cost;
-                    data_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
+                    access_list_cost += params.tx_access_list_address_cost;
+                    access_list_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
                 }
-                break :blk sum;
             },
-        };
+        }
 
         return params.tx_base_cost + data_cost + create_cost + access_list_cost;
+    }
+
+    /// EIP-7623: floor cost for calldata-heavy transactions (Prague+).
+    /// gas_limit must be >= this value for the tx to be valid.
+    fn calculateFloorCost(tx: transaction.Tx) u64 {
+        const tokens = calldataTokens(tx);
+        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(tx.getData().len) else 0;
+
+        var access_list_cost: u64 = 0;
+        switch (tx) {
+            .LegacyTx => {},
+            inline else => |al_tx| {
+                for (al_tx.access_list) |al| {
+                    access_list_cost += params.tx_access_list_address_cost;
+                    access_list_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
+                }
+            },
+        }
+
+        return params.tx_base_cost + tokens * params.tx_total_cost_floor_per_token + create_cost + access_list_cost;
     }
 
     fn initCodeCost(code_length: usize) u64 {
