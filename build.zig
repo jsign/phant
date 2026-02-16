@@ -1,6 +1,52 @@
 const std = @import("std");
 
+fn extractVersionFromZon(allocator: std.mem.Allocator) ![]const u8 {
+    const version_field_decl = ".version = \"";
+    var build_zon_file = try std.fs.cwd().openFile("build.zig.zon", .{});
+    const build_zon_stat = try build_zon_file.stat();
+    const build_zon = try build_zon_file.readToEndAlloc(allocator, build_zon_stat.size);
+    const version_start = std.mem.indexOf(u8, build_zon, version_field_decl);
+    if (version_start == null) {
+        return error.CantFindVersionFieldStart;
+    }
+    const version_offset = version_start.? + version_field_decl.len;
+    const version_end = std.mem.indexOf(u8, build_zon[version_offset..], "\"");
+    if (version_end == null) {
+        return error.CantFindVersionFieldEnd;
+    }
+    return build_zon[version_offset .. version_offset + version_end.?];
+}
+
+fn gitRevision(b: *std.Build) []const u8 {
+    var returncode: u8 = undefined;
+    const git_run = b.runAllowFail(&[_][]const u8{
+        "git",
+        "rev-parse",
+        "--short",
+        "HEAD",
+    }, &returncode, .Ignore) catch v: {
+        break :v "unstable";
+    };
+    return std.mem.trim(u8, git_run, " \t\n\r");
+}
+
 pub fn build(b: *std.Build) void {
+    // Generate src/version.zig
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const version = extractVersionFromZon(allocator) catch "unknown";
+    const git_rev = gitRevision(b);
+
+    var version_file = std.fs.cwd().createFile("src/version.zig", .{}) catch @panic("cannot create version.zig");
+    defer version_file.close();
+    version_file.writeAll(b.fmt(
+        \\pub const release = "{s}";
+        \\pub const revision = "{s}";
+        \\pub const version = release ++ "+" ++ revision;
+    , .{ version, git_rev })) catch @panic("cannot write version.zig");
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
