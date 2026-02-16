@@ -122,7 +122,10 @@ pub const VM = struct {
             .gas_left = @intCast(result.gas_left),
             .refund_counter = @intCast(result.gas_refund),
             .success = result.status_code == evmc.EVMC_SUCCESS,
-            .logs = if (self.env.logs) |l| l.items[0..l.items.len] else &[_]types.Log{},
+            .logs = if (result.status_code == evmc.EVMC_SUCCESS)
+                (if (self.env.logs) |l| l.items[0..l.items.len] else &[_]types.Log{})
+            else
+                &[_]types.Log{},
         };
     }
 };
