@@ -314,6 +314,11 @@ const EVMOneHost = struct {
         const vm: *VM = @as(*VM, @alignCast(@ptrCast(ctx.?)));
         const code = vm.env.state.getAccount(address).code;
 
+        // Check bounds to prevent integer overflow
+        if (code_offset >= code.len) {
+            return 0;
+        }
+
         const copy_len = @min(buffer_size, code.len - code_offset);
         @memcpy(buffer_data[0..copy_len], code[code_offset..][0..copy_len]);
 

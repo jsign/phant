@@ -7,7 +7,8 @@
             .path = "deps/zig-rlp",
         },
         .zig_eth_secp256k1 = .{
-            .path = "deps/zig-eth-secp256k1",
+            .url = "https://github.com/tellabg/zig-eth-secp256k1/archive/zig-0.15.2-compat.tar.gz",
+            .hash = "zigsecp256k1-0.1.0-GdppBEvqDAB_uzF9GPg8-V9FjUqUTB4RjuPwHuNHfwsC",
         },
     },
     .paths = .{""},
