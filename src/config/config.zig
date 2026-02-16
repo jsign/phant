@@ -1,7 +1,6 @@
 const std = @import("std");
 const json = std.json;
 const Allocator = std.mem.Allocator;
-// pretty-table disabled for now
 
 pub const ChainId = enum(u64) {
     SpecTest = 0,

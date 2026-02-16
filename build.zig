@@ -26,13 +26,13 @@ pub fn build(b: *std.Build) void {
             "baseline_analysis.cpp",
             "baseline_execution.cpp",
             "baseline_instruction_table.cpp",
-            "eof.cpp",
+            "delegation.cpp",
             "instructions_calls.cpp",
             "instructions_storage.cpp",
             "tracing.cpp",
             "vm.cpp",
         },
-        .flags = &.{ "-std=c++20", "-fno-exceptions", "-fno-rtti", "-DPROJECT_VERSION=\"0.12.0\"" },
+        .flags = &.{ "-std=c++20", "-fno-exceptions", "-fno-rtti", "-Wno-unknown-attributes", "-DPROJECT_VERSION=\"0.18.0\"" },
     });
 
     // keccak C source from ethash
@@ -52,6 +52,7 @@ pub fn build(b: *std.Build) void {
     // Include paths for evmone and its dependencies
     evmone_mod.addIncludePath(b.path("evmone/include"));
     evmone_mod.addIncludePath(b.path("evmone/lib/evmone"));
+    evmone_mod.addIncludePath(b.path("evmone/lib")); // for evmone_precompiles/
     evmone_mod.addIncludePath(b.path("evmone/evmc/include"));
     evmone_mod.addIncludePath(b.path("evmone/intx/include"));
     evmone_mod.addIncludePath(b.path("evmone/ethash/include"));
