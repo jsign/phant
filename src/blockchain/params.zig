@@ -10,6 +10,11 @@ pub const gas_code_deposit: i64 = 200;
 pub const tx_base_cost = 21000;
 pub const tx_data_cost_per_zero = 4;
 pub const tx_data_cost_per_non_zero = 16;
+
+// EIP-7623: Increase calldata cost (Prague)
+pub const tx_total_cost_floor_per_token = 10;
+pub const tx_tokens_per_non_zero_byte = 4;
+pub const tx_tokens_per_zero_byte = 1;
 pub const tx_create_cost = 32000;
 pub const tx_access_list_address_cost = 2400;
 pub const tx_access_list_storage_key_cost = 1900;

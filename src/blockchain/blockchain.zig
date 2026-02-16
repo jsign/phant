@@ -333,7 +333,7 @@ pub const Blockchain = struct {
     }
 
     fn processTransaction(allocator: Allocator, env: Environment, tx: transaction.Tx) !struct { success: bool, gas_used: u64, logs: []const Log } {
-        if (!validateTransaction(tx))
+        if (!validateTransaction(tx, env.evmc_revision))
             return error.InvalidTransaction;
 
         const sender = env.origin;
@@ -389,11 +389,20 @@ pub const Blockchain = struct {
 
         const gas_used = tx.getGasLimit() - output.gas_left;
         const gas_refund = @min(gas_used / 5, output.refund_counter);
-        const gas_refund_amount = (output.gas_left + gas_refund) * env.gas_price;
+        const standard_gas_used = gas_used - gas_refund;
+
+        // EIP-7623 (Prague+): floor cost for calldata-heavy transactions
+        // tx.gasUsed = 21000 + max(standard_tokens*4 + exec_gas + create,
+        //                          tokens * 10)
+        const total_gas_used = if (env.evmc_revision >= 13)
+            @max(standard_gas_used, calculateFloorCost(tx))
+        else
+            standard_gas_used;
+
+        const gas_refund_amount = (tx.getGasLimit() - total_gas_used) * env.gas_price;
 
         const priority_fee_per_gas = env.gas_price - env.base_fee_per_gas;
-        const transaction_fee = (gas_used - gas_refund) * priority_fee_per_gas;
-        const total_gas_used = gas_used - gas_refund;
+        const transaction_fee = total_gas_used * priority_fee_per_gas;
 
         sender_account = env.state.getAccount(sender);
         const sender_balance_after_refund = sender_account.balance + gas_refund_amount;
@@ -422,8 +431,12 @@ pub const Blockchain = struct {
         return .{ .success = output.success, .gas_used = total_gas_used, .logs = output.logs };
     }
 
-    fn validateTransaction(tx: transaction.Tx) bool {
-        if (calculateIntrinsicCost(tx) > tx.getGasLimit())
+    fn validateTransaction(tx: transaction.Tx, evmc_revision: u8) bool {
+        const min_gas = if (evmc_revision >= 13)
+            @max(calculateIntrinsicCost(tx), calculateFloorCost(tx))
+        else
+            calculateIntrinsicCost(tx);
+        if (min_gas > tx.getGasLimit())
             return false;
         if (tx.getNonce() >= (2 << 64) - 1)
             return false;
@@ -432,28 +445,54 @@ pub const Blockchain = struct {
         return true;
     }
 
+    fn calldataTokens(tx: transaction.Tx) u64 {
+        var tokens: u64 = 0;
+        for (tx.getData()) |byte| {
+            tokens += if (byte == 0) params.tx_tokens_per_zero_byte else params.tx_tokens_per_non_zero_byte;
+        }
+        return tokens;
+    }
+
     fn calculateIntrinsicCost(tx: transaction.Tx) u64 {
         var data_cost: u64 = 0;
-        const data = tx.getData();
-        for (data) |byte| {
+        for (tx.getData()) |byte| {
             data_cost += if (byte == 0) params.tx_data_cost_per_zero else params.tx_data_cost_per_non_zero;
         }
 
-        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(data.len) else 0;
+        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(tx.getData().len) else 0;
 
-        const access_list_cost = switch (tx) {
-            .LegacyTx => 0,
-            inline else => |al_tx| blk: {
-                const sum: u64 = 0;
+        var access_list_cost: u64 = 0;
+        switch (tx) {
+            .LegacyTx => {},
+            inline else => |al_tx| {
                 for (al_tx.access_list) |al| {
-                    data_cost += params.tx_access_list_address_cost;
-                    data_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
+                    access_list_cost += params.tx_access_list_address_cost;
+                    access_list_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
                 }
-                break :blk sum;
             },
-        };
+        }
 
         return params.tx_base_cost + data_cost + create_cost + access_list_cost;
+    }
+
+    /// EIP-7623: floor cost for calldata-heavy transactions (Prague+).
+    /// gas_limit must be >= this value for the tx to be valid.
+    fn calculateFloorCost(tx: transaction.Tx) u64 {
+        const tokens = calldataTokens(tx);
+        const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(tx.getData().len) else 0;
+
+        var access_list_cost: u64 = 0;
+        switch (tx) {
+            .LegacyTx => {},
+            inline else => |al_tx| {
+                for (al_tx.access_list) |al| {
+                    access_list_cost += params.tx_access_list_address_cost;
+                    access_list_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
+                }
+            },
+        }
+
+        return params.tx_base_cost + tokens * params.tx_total_cost_floor_per_token + create_cost + access_list_cost;
     }
 
     fn initCodeCost(code_length: usize) u64 {
