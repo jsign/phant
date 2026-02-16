@@ -6,7 +6,7 @@ An experimental Zig Ethereum client.
 
 This repo is very experimental, so you have to do some things once.
 
-We use the [Zig v0.13](https://ziglang.org/download/) compiler version.
+We use the [Zig v0.14.0](https://ziglang.org/download/) compiler version.
 
 ### Initialize git submodules
 

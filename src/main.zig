@@ -140,11 +140,11 @@ pub fn main() !void {
     };
     var blockchain = try Blockchain.init(allocator, config.chainId, &statedb, parent_header, try Fork.frontier.newFrontierFork(allocator));
 
-    var engine_api_server = try httpz.ServerApp(*Blockchain).init(allocator, .{
+    var engine_api_server = try httpz.Server(*Blockchain).init(allocator, .{
         .port = port,
     }, &blockchain);
-    var router = engine_api_server.router();
-    router.post("/", engineAPIHandler);
+    var router = try engine_api_server.router(.{});
+    router.post("/", engineAPIHandler, .{});
     std.log.info("Listening on {}", .{port});
     try engine_api_server.listen();
 }

@@ -81,10 +81,10 @@ pub const TxSigner = struct {
     fn hashTx(self: TxSigner, allocator: Allocator, transaction: Tx) !Hash32 {
         return switch (transaction) {
             Tx.LegacyTx => |itx| blk: {
-                var out = std.ArrayList(u8).init(allocator);
+                var out = std.array_list.Managed(u8).init(allocator);
                 defer out.deinit();
 
-                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest)) {
+                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest) and itx.v != 27 and itx.v != 28) {
                     // Post EIP-155 (since ~Nov 2016).
                     const LegacyTxRLP = struct {
                         nonce: u64,
@@ -143,7 +143,7 @@ pub const TxSigner = struct {
                     access_list: []AccessListTuple,
                 };
 
-                var out = std.ArrayList(u8).init(allocator);
+                var out = std.array_list.Managed(u8).init(allocator);
                 defer out.deinit();
                 try rlp.serialize(feeMarketRLP, allocator, .{
                     .chain_id = itx.chain_id,
@@ -170,7 +170,7 @@ pub const TxSigner = struct {
                     access_list: []AccessListTuple,
                 };
 
-                var out = std.ArrayList(u8).init(allocator);
+                var out = std.array_list.Managed(u8).init(allocator);
                 defer out.deinit();
                 try rlp.serialize(accessListRLP, allocator, .{
                     .chain_id = itx.chain_id,
