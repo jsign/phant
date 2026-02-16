@@ -3,7 +3,7 @@ const types = @import("types.zig");
 const crypto = @import("../crypto/crypto.zig");
 const rlp = @import("zig-rlp");
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
+const ArrayList = std.array_list.Managed;
 const hasher = crypto.hasher;
 const Hash32 = types.Hash32;
 const Address = types.Address;
@@ -11,6 +11,7 @@ const LogsBloom = types.LogsBloom;
 const TxTypes = types.TxTypes;
 
 pub const Receipt = struct {
+    tx_type: u8 = 0,
     succeeded: []const u8,
     cumulative_gas_used: u64,
     bloom: LogsBloom,
@@ -27,9 +28,24 @@ pub const Receipt = struct {
 
     // encode returns the RLP encoding of the receipt. The caller is responsible for freeing the returned slice.
     pub fn encode(self: Receipt, allocator: Allocator) ![]const u8 {
+        // For RLP serialization, we need a copy without the tx_type field
+        const rlp_receipt = struct {
+            succeeded: []const u8,
+            cumulative_gas_used: u64,
+            bloom: LogsBloom,
+            logs: []Log,
+        }{
+            .succeeded = self.succeeded,
+            .cumulative_gas_used = self.cumulative_gas_used,
+            .bloom = self.bloom,
+            .logs = self.logs,
+        };
         var out = ArrayList(u8).init(allocator);
         defer out.deinit();
-        try rlp.serialize(Receipt, allocator, self, &out);
+        if (self.tx_type != 0) {
+            try out.append(self.tx_type);
+        }
+        try rlp.serialize(@TypeOf(rlp_receipt), allocator, rlp_receipt, &out);
 
         return out.toOwnedSlice();
     }

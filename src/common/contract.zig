@@ -6,7 +6,7 @@ const Keccak256 = std.crypto.hash.sha3.Keccak256;
 
 // TODO: with careful calculation, we could avoid the allocator.
 pub fn computeCREATEContractAddress(allocator: Allocator, address: types.Address, nonce: u64) !types.Address {
-    var out = std.ArrayList(u8).init(allocator);
+    var out = std.array_list.Managed(u8).init(allocator);
     defer out.deinit();
     try rlp.serialize(struct { addr: types.Address, nonce: u64 }, allocator, .{ .addr = address, .nonce = nonce }, &out);
 

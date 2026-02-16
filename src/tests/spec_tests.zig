@@ -40,9 +40,9 @@ pub const Fixture = struct {
 
 pub const FixtureTest = struct {
     _info: struct {
-        @"filling-transition-tool": []const u8,
-        @"reference-spec": []const u8,
-        @"reference-spec-version": []const u8,
+        @"filling-transition-tool": ?[]const u8 = null,
+        @"reference-spec": ?[]const u8 = null,
+        @"reference-spec-version": ?[]const u8 = null,
     },
     network: []const u8,
     genesisRLP: HexString,
@@ -79,7 +79,36 @@ pub const FixtureTest = struct {
         var out = try allocator.alloc(u8, self.genesisRLP.len / 2);
         var rlp_bytes = try std.fmt.hexToBytes(out, self.genesisRLP[2..]);
         const parent_block = try Block.decode(allocator, rlp_bytes);
-        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, try Fork.frontier.newFrontierFork(allocator));
+        // Select fork based on network
+        const fork = blk2: {
+            const pre_prague = [_][]const u8{
+                "Frontier", "Homestead", "EIP150", "EIP158", "Byzantium",
+                "Constantinople", "ConstantinopleFix", "Istanbul", "Berlin",
+                "London", "Paris", "Shanghai", "Cancun",
+                "FrontierToHomesteadAt5", "HomesteadToEIP150At5",
+                "HomesteadToDaoAt5", "EIP158ToByzantiumAt5",
+                "ByzantiumToConstantinopleFixAt5",
+            };
+            for (pre_prague) |name| {
+                if (std.mem.eql(u8, self.network, name)) {
+                    break :blk2 try Fork.frontier.newFrontierFork(allocator);
+                }
+            }
+            if (std.mem.eql(u8, self.network, "Prague")) {
+                break :blk2 try Fork.prague.enablePrague(&statedb, null, allocator);
+            }
+            return error.UnsupportedNetwork;
+        };
+        var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, fork);
+
+        // Set EVMC revision based on network
+        if (std.mem.eql(u8, self.network, "Cancun")) {
+            chain.evmc_revision = 12; // EVMC_CANCUN
+        } else if (std.mem.eql(u8, self.network, "Prague")) {
+            chain.evmc_revision = 13; // EVMC_PRAGUE
+        } else if (std.mem.eql(u8, self.network, "Shanghai")) {
+            chain.evmc_revision = 11; // EVMC_SHANGHAI
+        }
 
         // Execute blocks.
         for (self.blocks) |encoded_block| {
@@ -90,39 +119,54 @@ pub const FixtureTest = struct {
             const block_should_fail = if (encoded_block.expectException) |_| true else false;
             if (chain.runBlock(block)) |_| {
                 if (block_should_fail) {
+                    log.err("block execution succeeded but expected failure", .{});
                     return error.BlockExecutionValidityExpectationMismatch;
                 }
-            } else |_| {
+            } else |err| {
                 if (!block_should_fail) {
+                    log.err("block execution failed unexpectedly: {}", .{err});
                     return error.BlockExecutionValidityExpectationMismatch;
                 }
             }
         }
 
+        log.debug("All blocks executed, verifying post state...", .{});
         // Verify that the post state matches what the fixture `postState` claims is true.
         var it = self.postState.map.iterator();
         while (it.next()) |entry| {
             var exp_account_state: AccountState = try entry.value_ptr.toAccountState(allocator, entry.key_ptr.*);
             const got_account_state = statedb.getAccount(exp_account_state.addr);
             if (got_account_state.nonce != exp_account_state.nonce) {
-                log.err("{} expected nonce {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.nonce, got_account_state.nonce });
+                log.err("{x} expected nonce {d} but got {d}", .{ &exp_account_state.addr, exp_account_state.nonce, got_account_state.nonce });
                 return error.PostStateNonceMismatch;
             }
             if (got_account_state.balance != exp_account_state.balance) {
-                log.err("{} expected balance {d} but got {d}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), exp_account_state.balance, got_account_state.balance });
+                log.err("{x} expected balance {d} but got {d}", .{ &exp_account_state.addr, exp_account_state.balance, got_account_state.balance });
                 return error.PostStateBalanceMismatch;
             }
 
             const got_storage = statedb.getAllStorage(exp_account_state.addr) orelse return error.PostStateAccountMustExist;
-            if (got_storage.count() != exp_account_state.storage.count()) {
-                log.err("expected storage count {d} but got {d}", .{ exp_account_state.storage.count(), got_storage.count() });
+            // Count non-zero entries in got_storage
+            var got_nonzero_count: usize = 0;
+            {
+                var it_count = got_storage.iterator();
+                while (it_count.next()) |se| {
+                    if (!std.mem.eql(u8, se.value_ptr, &std.mem.zeroes(Bytes32))) {
+                        got_nonzero_count += 1;
+                    }
+                }
+            }
+            if (got_nonzero_count != exp_account_state.storage.count()) {
+                log.err("{x} expected storage count {d} but got {d}", .{ &exp_account_state.addr, exp_account_state.storage.count(), got_nonzero_count });
                 return error.PostStateStorageCountMismatch;
             }
             var it_got = got_storage.iterator();
             while (it_got.next()) |storage_entry| {
+                // Skip zero-value entries in got_storage
+                if (std.mem.eql(u8, storage_entry.value_ptr, &std.mem.zeroes(Bytes32))) continue;
                 const val = exp_account_state.storage.get(storage_entry.key_ptr.*) orelse return error.PostStateStorageKeyMustExist;
                 if (!std.mem.eql(u8, storage_entry.value_ptr, &val)) {
-                    log.err("{} expected storage slot value at {d}, got {s}, exp {s}", .{ std.fmt.fmtSliceHexLower(&exp_account_state.addr), storage_entry.key_ptr.*, std.fmt.fmtSliceHexLower(&storage_entry.value_ptr.*), std.fmt.fmtSliceHexLower(&val) });
+                    log.err("{x} expected storage slot value at {d}, got {x}, exp {x}", .{ &exp_account_state.addr, storage_entry.key_ptr.*, &storage_entry.value_ptr.*, &val });
                     return error.PostStateStorageValueMismatch;
                 }
             }
@@ -156,9 +200,11 @@ pub const AccountStateHex = struct {
         while (it.next()) |entry| {
             const key = try std.fmt.parseUnsigned(u256, entry.key_ptr.*[2..], 16);
             const value = try std.fmt.parseUnsigned(u256, entry.value_ptr.*[2..], 16);
-            var value_bytes: Bytes32 = undefined;
-            std.mem.writeInt(u256, &value_bytes, value, .big);
-            try account.storage.putNoClobber(key, value_bytes);
+            if (value != 0) {
+                var value_bytes: Bytes32 = undefined;
+                std.mem.writeInt(u256, &value_bytes, value, .big);
+                try account.storage.putNoClobber(key, value_bytes);
+            }
         }
 
         return account;

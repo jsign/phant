@@ -48,9 +48,14 @@ pub const BlockHeader = struct {
 
     // defines a custom encoder so that fields that were added later on in the chain history
     // are not included in the RLP when hashing.
-    pub fn encodeToRLP(self: *const BlockHeader, allocator: Allocator, list: *std.ArrayList(u8)) !void {
+    pub fn encodeToRLP(self: *const BlockHeader, allocator: Allocator, list: *std.array_list.Managed(u8)) !void {
+        if (self.request_hash != null) {
+            const tmp = .{ self.parent_hash, self.uncle_hash, self.fee_recipient, self.state_root, self.transactions_root, self.receipts_root, self.logs_bloom, self.difficulty, self.block_number, self.gas_limit, self.gas_used, self.timestamp, self.extra_data, self.prev_randao, self.nonce, self.base_fee_per_gas, self.withdrawals_root, self.blob_gas_used, self.excess_blob_gas, self.parent_beacon_root, self.request_hash };
+            return rlp.serialize(@TypeOf(tmp), allocator, tmp, list);
+        }
         if (self.parent_beacon_root != null) {
-            return rlp.serialize(BlockHeader, allocator, self.*, list);
+            const tmp = .{ self.parent_hash, self.uncle_hash, self.fee_recipient, self.state_root, self.transactions_root, self.receipts_root, self.logs_bloom, self.difficulty, self.block_number, self.gas_limit, self.gas_used, self.timestamp, self.extra_data, self.prev_randao, self.nonce, self.base_fee_per_gas, self.withdrawals_root, self.blob_gas_used, self.excess_blob_gas, self.parent_beacon_root };
+            return rlp.serialize(@TypeOf(tmp), allocator, tmp, list);
         }
         if (self.blob_gas_used != null) {
             const tmp = .{ self.parent_hash, self.uncle_hash, self.fee_recipient, self.state_root, self.transactions_root, self.receipts_root, self.logs_bloom, self.difficulty, self.block_number, self.gas_limit, self.gas_used, self.timestamp, self.extra_data, self.prev_randao, self.nonce, self.base_fee_per_gas.?, self.withdrawals_root.?, self.blob_gas_used.?, self.excess_blob_gas.? };

@@ -122,7 +122,7 @@ const GenericRLPValue = union(enum) {
     value: []const u8,
     list: []const GenericRLPValue,
 
-    pub fn encodeToRLP(self: GenericRLPValue, allocator: Allocator, list: *std.ArrayList(u8)) !void {
+    pub fn encodeToRLP(self: GenericRLPValue, allocator: Allocator, list: *std.array_list.Managed(u8)) !void {
         switch (self) {
             inline else => |v| try rlp.serialize(@TypeOf(v), allocator, v, list),
         }
@@ -194,7 +194,7 @@ const ExtensionNode = struct {
 
     pub fn encodeRLP(self: ExtensionNode, allocator: Allocator) ![]const u8 {
         const rlp_value = try self.getRLPValue(allocator);
-        var out = std.ArrayList(u8).init(allocator);
+        var out = std.array_list.Managed(u8).init(allocator);
         try rlp.serialize(@TypeOf(rlp_value), allocator, rlp_value, &out);
 
         return out.toOwnedSlice();
@@ -232,7 +232,7 @@ const BranchNode = struct {
 
     pub fn encodeRLP(self: BranchNode, allocator: Allocator) ![]const u8 {
         const rlp_value = try self.getRLPValue(allocator);
-        var out = std.ArrayList(u8).init(allocator);
+        var out = std.array_list.Managed(u8).init(allocator);
         try rlp.serialize(@TypeOf(rlp_value), allocator, rlp_value, &out);
 
         return out.toOwnedSlice();
@@ -262,7 +262,7 @@ const LeafNode = struct {
 
     pub fn encodeRLP(self: LeafNode, allocator: Allocator) ![]const u8 {
         const bv = try self.getRLPValue(allocator);
-        var out = std.ArrayList(u8).init(allocator);
+        var out = std.array_list.Managed(u8).init(allocator);
         defer out.deinit();
 
         try rlp.serialize(GenericRLPValue, allocator, bv, &out);
