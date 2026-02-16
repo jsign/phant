@@ -498,9 +498,9 @@ const EVMOneHost = struct {
             error.OutOfMemory => @panic("OOO"),
         };
 
-        // Send value.
+        // Send value (not for CALLCODE/DELEGATECALL — they execute in the caller's context).
         const value = std.mem.readInt(u256, &msg.value.bytes, std.builtin.Endian.big);
-        if (value > 0) {
+        if (value > 0 and msg.kind != evmc.EVMC_CALLCODE and msg.kind != evmc.EVMC_DELEGATECALL) {
             const sender_balance = vm.env.state.getAccount(sender).balance;
             if (sender_balance < value) {
                 return .{
