@@ -4,7 +4,8 @@
     .version = "0.0.1-beta-0",
     .dependencies = .{
         .rlp = .{
-            .path = "deps/zig-rlp",
+            .url = "https://github.com/tellabg/zig-rlp/archive/zig-0.15.2-compat.tar.gz",
+            .hash = "rlp-0.1.0-7i0JtKySAABmyQnHmUUPcHJ-zf_XPz8m0ftF6e24eXjK",
         },
         .zig_eth_secp256k1 = .{
             .url = "https://github.com/tellabg/zig-eth-secp256k1/archive/zig-0.15.2-compat.tar.gz",
