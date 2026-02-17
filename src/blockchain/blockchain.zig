@@ -69,10 +69,9 @@ pub const Blockchain = struct {
         defer arena.deinit();
         const allocator = arena.allocator();
 
-        // Snapshot state before block execution so we can rollback on failure.
-        var snap = try self.state.snapshot();
-        errdefer self.state.restoreFrom(&snap);
-        defer snap.deinit();
+        // Note: state is NOT automatically rolled back on error.
+        // Callers must handle state restoration externally if needed
+        // (e.g., by re-creating the StateDB from genesis/preState).
 
         // Add the current block to the last 256 block hashes.
         try self.fork.update_parent_block_hash(block.header.block_number - 1, block.header.parent_hash);
@@ -419,8 +418,11 @@ pub const Blockchain = struct {
             },
         }
 
-        // EIP-2929
+        // EIP-2929: warm sender, recipient, coinbase, and precompiles
         try env.state.putAccessedAccount(sender);
+        if (tx.getTo()) |to| {
+            try env.state.putAccessedAccount(to);
+        }
         for (params.precompiled_contract_addresses) |precompile_addr| {
             try env.state.putAccessedAccount(precompile_addr);
         }
@@ -441,11 +443,11 @@ pub const Blockchain = struct {
         const gas_refund = @min(gas_used / 5, output.refund_counter);
         const standard_gas_used = gas_used - gas_refund;
 
-        // EIP-7623 (Prague+): floor cost for calldata-heavy transactions
-        // tx.gasUsed = 21000 + max(standard_tokens*4 + exec_gas + create,
-        //                          tokens * 10)
+        // EIP-7623 (Prague+): floor cost for calldata-heavy transactions.
+        // gas_used = max(standard_gas_used, floor_cost)
+        // floor_cost is capped at gas_limit since gas_used can never exceed gas_limit.
         const total_gas_used = if (env.evmc_revision >= 13)
-            @max(standard_gas_used, calculateFloorCost(tx))
+            @min(tx.getGasLimit(), @max(standard_gas_used, calculateFloorCost(tx)))
         else
             standard_gas_used;
 
@@ -489,7 +491,7 @@ pub const Blockchain = struct {
             .BlobTx => if (evmc_revision < 12) return false, // EVMC_CANCUN = 12
             .LegacyTx => {},
         }
-        // Intrinsic gas check (always). EIP-7623 floor is applied post-execution, not here.
+        // Intrinsic gas check (always).
         const min_gas = calculateIntrinsicCost(tx);
         if (min_gas > tx.getGasLimit())
             return false;

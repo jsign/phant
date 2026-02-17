@@ -147,18 +147,34 @@ pub const FixtureTest = struct {
         }
 
         // Execute blocks.
-        // Skip test cases that contain invalid blocks (snapshot/restore has a stack
-        // corruption bug — TODO: fix and re-enable)
-        for (self.blocks) |encoded_block| {
-            if (encoded_block.expectException != null) return true; // skip entire test
-        }
-
         for (self.blocks) |encoded_block| {
             out = try allocator.alloc(u8, encoded_block.rlp.len / 2);
             rlp_bytes = try std.fmt.hexToBytes(out, encoded_block.rlp[2..]);
-            const block = try Block.decode(allocator, rlp_bytes);
+            const block = Block.decode(allocator, rlp_bytes) catch |err| {
+                // Block RLP decoding failed
+                if (encoded_block.expectException != null) {
+                    continue; // Expected failure — skip this block
+                }
+                log.err("unexpected block decode error in {s}: {}", .{ self.network, err });
+                return error.BlockExecutionValidityExpectationMismatch;
+            };
 
-            if (chain.runBlock(block)) |_| {} else |err| {
+            if (chain.runBlock(block)) |_| {
+                // Block executed successfully
+                if (encoded_block.expectException != null) {
+                    log.err("block should have been rejected in {s} (expected: {s})", .{ self.network, encoded_block.expectException.? });
+                    return error.BlockShouldHaveBeenRejected;
+                }
+            } else |err| {
+                // Block execution failed
+                if (encoded_block.expectException != null) {
+                    // Expected failure — restore state from genesis since runBlock
+                    // may have partially modified it (no automatic rollback).
+                    // Don't deinit old statedb — arena allocator handles cleanup.
+                    // Deinit would free code slices that accounts_state still references.
+                    statedb = try StateDB.init(allocator, accounts_state);
+                    continue;
+                }
                 log.err("block execution failed unexpectedly in {s}: {}", .{ self.network, err });
                 return error.BlockExecutionValidityExpectationMismatch;
             }

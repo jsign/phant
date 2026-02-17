@@ -22,4 +22,5 @@ zig-out/
 /evmone/
 /lib/evmone/
 .vscode
-src/version.zigsrc/tests/fixtures/
+src/version.zig
+src/tests/fixtures/
