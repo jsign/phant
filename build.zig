@@ -148,6 +148,32 @@ pub fn build(b: *std.Build) void {
     const run_unit_tests = b.addRunArtifact(unit_tests);
     run_unit_tests.has_side_effects = true;
 
+    // Fetch test fixtures from ethereum/execution-spec-tests releases.
+    // Downloads the tarball and extracts blockchain_tests/ into src/tests/fixtures/.
+    const fixtures_url = "https://github.com/ethereum/execution-spec-tests/releases/download/v5.4.0/fixtures_stable.tar.gz";
+    const fixtures_dir = "src/tests/fixtures";
+
+    const fetch_fixtures = b.addSystemCommand(&.{
+        "sh", "-c",
+        // Only download if the directory doesn't already exist (or is empty)
+        "if [ -d '" ++ fixtures_dir ++ "' ] && [ \"$(ls -A '" ++ fixtures_dir ++ "' 2>/dev/null)\" ]; then " ++
+            "echo 'Fixtures already present, skipping download.'; " ++
+            "else " ++
+            "echo 'Downloading test fixtures...'; " ++
+            "mkdir -p '" ++ fixtures_dir ++ "' && " ++
+            "curl -sL '" ++ fixtures_url ++ "' | " ++
+            "tar xz --strip-components=2 -C '" ++ fixtures_dir ++ "' " ++
+            "'fixtures/blockchain_tests/shanghai' " ++
+            "'fixtures/blockchain_tests/cancun'; " ++
+            "echo \"Extracted $(find '" ++ fixtures_dir ++ "' -name '*.json' | wc -l) test fixture files.\"; " ++
+            "fi",
+    });
+    fetch_fixtures.has_side_effects = true;
+
+    const fetch_step = b.step("fetch-fixtures", "Download blockchain test fixtures from ethereum/execution-spec-tests");
+    fetch_step.dependOn(&fetch_fixtures.step);
+
     const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&fetch_fixtures.step);
     test_step.dependOn(&run_unit_tests.step);
 }
