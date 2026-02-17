@@ -23,6 +23,13 @@ pub const base_fee_max_change_denominator = 8;
 pub const elasticity_multiplier = 2;
 pub const max_code_size = 0x6000;
 
+// EIP-4844: Blob gas
+pub const gas_per_blob: u64 = 131072; // 2^17
+pub const target_blob_gas_per_block: u64 = 393216; // 3 * gas_per_blob
+pub const max_blob_gas_per_block: u64 = 786432; // 6 * gas_per_blob
+pub const blob_base_fee_update_fraction: u64 = 3338477;
+pub const min_blob_base_fee: u64 = 1;
+
 pub const stack_depth_limit = 1024;
 
 pub const precompiled_contract_addresses = [_]Address{

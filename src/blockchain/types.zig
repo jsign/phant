@@ -26,6 +26,7 @@ pub const Environment = struct {
     state: *StateDB,
     chain_id: config.ChainId,
     evmc_revision: u8 = 11, // EVMC_SHANGHAI by default
+    blob_base_fee: u256 = 0, // EIP-4844
     logs: ?*std.array_list.Managed(Log) = null,
 };
 

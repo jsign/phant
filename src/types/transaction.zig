@@ -11,12 +11,14 @@ pub const TxTypes = enum(u4) {
     LegacyTx = 0,
     AccessListTx = 1,
     FeeMarketTx = 2,
+    BlobTx = 3,
 };
 
 pub const Tx = union(TxTypes) {
     LegacyTx: LegacyTx,
     AccessListTx: AccessListTx,
     FeeMarketTx: FeeMarketTx,
+    BlobTx: BlobTx,
 
     // init initializes a transaction without signature fields.
     // TODO(jsign): comment about data ownership.
@@ -34,7 +36,8 @@ pub const Tx = union(TxTypes) {
         if (bytes[0] <= 0x7f) {
             if (bytes[0] == 0x01) return Tx{ .AccessListTx = try AccessListTx.decode(arena, bytes[1..]) };
             if (bytes[0] == 0x02) return Tx{ .FeeMarketTx = try FeeMarketTx.decode(arena, bytes[1..]) };
-            return error.UnsupportedEIP2930TxType;
+            if (bytes[0] == 0x03) return Tx{ .BlobTx = try BlobTx.decode(arena, bytes[1..]) };
+            return error.UnsupportedTxType;
         }
 
         // LegacyTx
@@ -56,6 +59,10 @@ pub const Tx = union(TxTypes) {
             .FeeMarketTx => |tx| {
                 try list.append(0x02);
                 try rlp.serialize(FeeMarketTx, arena, tx, &list);
+            },
+            .BlobTx => |tx| {
+                try list.append(0x03);
+                try rlp.serialize(BlobTx, arena, tx, &list);
             },
         }
         return list.toOwnedSlice();
@@ -81,6 +88,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| try tx.hash(allocator),
             Tx.AccessListTx => |tx| try tx.hash(allocator),
             Tx.FeeMarketTx => |tx| try tx.hash(allocator),
+            Tx.BlobTx => |tx| try tx.hash(allocator),
         };
     }
 
@@ -89,6 +97,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.chainIdFromSignature(),
             Tx.AccessListTx => |tx| tx.chain_id,
             Tx.FeeMarketTx => |tx| tx.chain_id,
+            Tx.BlobTx => |tx| tx.chain_id,
         };
     }
 
@@ -97,6 +106,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.gas_price,
             Tx.AccessListTx => |tx| tx.gas_price,
             Tx.FeeMarketTx => |tx| tx.max_fee_per_gas,
+            Tx.BlobTx => |tx| tx.max_fee_per_gas,
         };
     }
 
@@ -105,6 +115,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.nonce,
             Tx.AccessListTx => |tx| tx.nonce,
             Tx.FeeMarketTx => |tx| tx.nonce,
+            Tx.BlobTx => |tx| tx.nonce,
         };
     }
 
@@ -113,6 +124,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.data,
             Tx.AccessListTx => |tx| tx.data,
             Tx.FeeMarketTx => |tx| tx.data,
+            Tx.BlobTx => |tx| tx.data,
         };
     }
 
@@ -121,6 +133,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.to,
             Tx.AccessListTx => |tx| tx.to,
             Tx.FeeMarketTx => |tx| tx.to,
+            Tx.BlobTx => |tx| @as(?Address, tx.to),
         };
     }
 
@@ -129,6 +142,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.value,
             Tx.AccessListTx => |tx| tx.value,
             Tx.FeeMarketTx => |tx| tx.value,
+            Tx.BlobTx => |tx| tx.value,
         };
     }
 
@@ -137,6 +151,30 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |tx| tx.gas_limit,
             Tx.AccessListTx => |tx| tx.gas,
             Tx.FeeMarketTx => |tx| tx.gas,
+            Tx.BlobTx => |tx| tx.gas,
+        };
+    }
+
+    pub fn getAccessList(self: Tx) []AccessListTuple {
+        return switch (self) {
+            Tx.LegacyTx => &.{},
+            Tx.AccessListTx => |tx| tx.access_list,
+            Tx.FeeMarketTx => |tx| tx.access_list,
+            Tx.BlobTx => |tx| tx.access_list,
+        };
+    }
+
+    pub fn getBlobVersionedHashes(self: Tx) []Hash32 {
+        return switch (self) {
+            Tx.BlobTx => |tx| tx.blob_versioned_hashes,
+            else => &.{},
+        };
+    }
+
+    pub fn getMaxFeePerBlobGas(self: Tx) ?u256 {
+        return switch (self) {
+            Tx.BlobTx => |tx| tx.max_fee_per_blob_gas,
+            else => null,
         };
     }
 
@@ -145,6 +183,7 @@ pub const Tx = union(TxTypes) {
             Tx.LegacyTx => |*tx| tx.setSignature(v, r, s),
             Tx.AccessListTx => |*tx| tx.setSignature(v, r, s),
             Tx.FeeMarketTx => |*tx| tx.setSignature(v, r, s),
+            Tx.BlobTx => |*tx| tx.setSignature(v, r, s),
         }
     }
 };
@@ -269,6 +308,42 @@ pub const FeeMarketTx = struct {
     // decode decodes a transaction from bytes.
     pub fn decode(arena: Allocator, bytes: []const u8) !FeeMarketTx {
         return try common.decodeRLP(FeeMarketTx, arena, bytes);
+    }
+};
+
+pub const BlobTx = struct {
+    chain_id: u64,
+    nonce: u64,
+    max_priority_fee_per_gas: u64,
+    max_fee_per_gas: u256,
+    gas: u64,
+    to: Address, // Blob tx must not be contract creation
+    value: u256,
+    data: []const u8,
+    access_list: []AccessListTuple,
+    max_fee_per_blob_gas: u256,
+    blob_versioned_hashes: []Hash32,
+    y_parity: u256,
+    r: u256,
+    s: u256,
+
+    pub fn hash(self: BlobTx, allocator: Allocator) !Hash32 {
+        const prefix = [_]u8{@intFromEnum(TxTypes.BlobTx)};
+        return try common.encodeToRLPAndHash(BlobTx, allocator, self, &prefix);
+    }
+
+    pub fn setSignature(self: *BlobTx, v: u256, r: u256, s: u256) void {
+        self.*.y_parity = v;
+        self.*.r = r;
+        self.*.s = s;
+    }
+
+    pub fn decode(arena: Allocator, bytes: []const u8) !BlobTx {
+        return try common.decodeRLP(BlobTx, arena, bytes);
+    }
+
+    pub fn totalBlobGas(self: BlobTx) u64 {
+        return @intCast(self.blob_versioned_hashes.len * 131072); // GAS_PER_BLOB = 2^17
     }
 };
 

@@ -228,8 +228,22 @@ pub const Blockchain = struct {
             }
         }
 
+        // EIP-4844: compute blob base fee from excess blob gas
+        const blob_base_fee: u256 = if (block.header.excess_blob_gas) |ebg|
+            calcBlobBaseFee(ebg)
+        else
+            0;
+        var total_blob_gas: u64 = 0;
+
         for (block.transactions, 0..) |tx, i| {
             const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas.?, gas_available, tx_signer);
+
+            // EIP-4844: validate max_fee_per_blob_gas >= blob_base_fee
+            if (tx == .BlobTx) {
+                if (tx.BlobTx.max_fee_per_blob_gas < blob_base_fee)
+                    return error.MaxFeePerBlobGasTooLow;
+                total_blob_gas += tx.BlobTx.totalBlobGas();
+            }
 
             const env: Environment = .{
                 .fork = chain.fork,
@@ -244,6 +258,7 @@ pub const Blockchain = struct {
                 .state = state,
                 .chain_id = chain.chain_id,
                 .evmc_revision = chain.evmc_revision,
+                .blob_base_fee = blob_base_fee,
             };
 
             std.log.debug("applyBody: processing tx {d}", .{i});
@@ -259,6 +274,7 @@ pub const Blockchain = struct {
                 .LegacyTx => 0,
                 .AccessListTx => 1,
                 .FeeMarketTx => 2,
+                .BlobTx => 3,
             };
             receipts[i] = receipt;
 
@@ -321,7 +337,7 @@ pub const Blockchain = struct {
         const sender_address = try tx_signer.get_sender(allocator, tx);
 
         const effective_gas_price = switch (tx) {
-            .FeeMarketTx => |fm_tx| blk: {
+            inline .FeeMarketTx, .BlobTx => |fm_tx| blk: {
                 if (fm_tx.max_fee_per_gas < fm_tx.max_priority_fee_per_gas)
                     return error.InvalidMaxFeePerGas;
                 if (fm_tx.max_fee_per_gas < base_fee_per_gas)
@@ -350,8 +366,13 @@ pub const Blockchain = struct {
         var sender_account = env.state.getAccount(sender);
         if (sender_account.nonce != tx.getNonce())
             return error.InvalidTxNonce;
-        if (sender_account.balance < gas_fee + tx.getValue()) {
-            std.log.err("NotEnoughBalance: sender={x} balance={d}, gas_fee={d}, value={d}, total_needed={d}, nonce={d}", .{ &env.origin, sender_account.balance, gas_fee, tx.getValue(), gas_fee + tx.getValue(), sender_account.nonce });
+        // Include blob gas cost in balance check (EIP-4844)
+        const blob_gas_cost: u256 = if (tx == .BlobTx)
+            tx.BlobTx.totalBlobGas() * env.blob_base_fee
+        else
+            0;
+        if (sender_account.balance < gas_fee + tx.getValue() + blob_gas_cost) {
+            std.log.err("NotEnoughBalance: sender={x} balance={d}, gas_fee={d}, value={d}, total_needed={d}, nonce={d}", .{ &env.origin, sender_account.balance, gas_fee, tx.getValue(), gas_fee + tx.getValue() + blob_gas_cost, sender_account.nonce });
             return error.NotEnoughBalance;
         }
         if (sender_account.code.len > 0)
@@ -360,7 +381,7 @@ pub const Blockchain = struct {
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
         const effective_gas_fee = tx.getGasLimit() * env.gas_price;
 
-        const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee;
+        const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee - blob_gas_cost;
         try env.state.setBalance(sender, sender_balance_after_gas_fee);
 
         try env.state.putAccessedAccount(env.coinbase);
@@ -449,6 +470,15 @@ pub const Blockchain = struct {
             return false;
         if (tx.getTo() == null and tx.getData().len > 2 * params.max_code_size)
             return false;
+        // EIP-4844: blob tx must not be a contract creation and must have at least one blob
+        if (tx == .BlobTx) {
+            if (tx.getTo() == null) return false;
+            if (tx.BlobTx.blob_versioned_hashes.len == 0) return false;
+            // Validate versioned hash prefixes (must be 0x01)
+            for (tx.BlobTx.blob_versioned_hashes) |h| {
+                if (h[0] != 0x01) return false;
+            }
+        }
         return true;
     }
 
@@ -511,5 +541,32 @@ pub const Blockchain = struct {
         defer vm_instance.deinit();
 
         return try vm_instance.processMessageCall(message);
+    }
+
+    /// EIP-4844: Calculate the blob base fee from excess blob gas.
+    /// Uses the fake exponential: fake_exponential(1, excess_blob_gas, blob_base_fee_update_fraction)
+    fn calcBlobBaseFee(excess_blob_gas: u64) u256 {
+        if (excess_blob_gas == 0) return params.min_blob_base_fee;
+        // fake_exponential(factor=1, numerator=excess_blob_gas, denominator=blob_base_fee_update_fraction)
+        // = sum_{i=0..} (factor * numerator^i) / (denominator^i * i!)
+        // Iterative computation until term becomes zero
+        var result: u256 = 0;
+        var numerator_accum: u256 = params.blob_base_fee_update_fraction; // denominator * factor
+        const numerator: u256 = excess_blob_gas;
+        const denominator: u256 = params.blob_base_fee_update_fraction;
+        var i: u256 = 1;
+        while (numerator_accum > 0) {
+            result += numerator_accum;
+            numerator_accum = numerator_accum * numerator / (denominator * i);
+            i += 1;
+        }
+        return @max(result / denominator, params.min_blob_base_fee);
+    }
+
+    /// EIP-4844: Calculate excess blob gas for the current block.
+    fn calcExcessBlobGas(parent_excess_blob_gas: u64, parent_blob_gas_used: u64) u64 {
+        const total = parent_excess_blob_gas + parent_blob_gas_used;
+        if (total < params.target_blob_gas_per_block) return 0;
+        return total - params.target_blob_gas_per_block;
     }
 };
