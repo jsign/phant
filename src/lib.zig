@@ -9,6 +9,7 @@ pub const signer = @import("signer/signer.zig");
 pub const engine_api = @import("engine_api/engine_api.zig");
 pub const mpt = @import("mpt/mpt.zig");
 pub const config = @import("config/config.zig");
+pub const spec_tests = @import("tests/spec_tests.zig");
 
 test "tests" {
     std.testing.log_level = .debug;

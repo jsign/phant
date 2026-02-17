@@ -78,7 +78,7 @@ pub const Block = struct {
     header: BlockHeader,
     transactions: []Tx,
     uncles: []BlockHeader,
-    withdrawals: []Withdrawal,
+    withdrawals: ?[]Withdrawal = null,
 
     pub fn decode(arena: Allocator, rlp_bytes: []const u8) !Block {
         var block: Block = undefined;
