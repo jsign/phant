@@ -61,7 +61,7 @@ pub const Blockchain = struct {
     }
 
     pub fn runBlock(self: *Blockchain, block: Block) !void {
-        try validateBlockHeader(self.allocator, self.prev_block, block.header);
+        try validateBlockHeader(self.allocator, self.prev_block, block.header, self.evmc_revision);
         if (block.uncles.len != 0)
             return error.NotEmptyUncles;
 
@@ -103,9 +103,13 @@ pub const Blockchain = struct {
         // TODO: disabled until logs bloom are calculated
         // if (!std.mem.eql(u8, &result.logs_bloom, &block.header.logs_bloom))
         //     return error.InvalidLogsBloom;
-        if (!std.mem.eql(u8, &result.withdrawals_root, &block.header.withdrawals_root.?)) {
-            std.log.err("withdrawals_root mismatch", .{});
-            return error.InvalidWithdrawalsRoot;
+        if (block.header.withdrawals_root) |wr| {
+            if (result.withdrawals_root) |rwr| {
+                if (!std.mem.eql(u8, &rwr, &wr)) {
+                    std.log.err("withdrawals_root mismatch", .{});
+                    return error.InvalidWithdrawalsRoot;
+                }
+            }
         }
 
         // Note that we free and clone with the Blockchain allocator, and not the arena allocator.
@@ -116,28 +120,30 @@ pub const Blockchain = struct {
 
     // validateBlockHeader validates the header of a block itself and with respect with the parent.
     // If isn't valid, it returns an error.
-    fn validateBlockHeader(allocator: Allocator, prev_block: BlockHeader, curr_block: BlockHeader) !void {
+    fn validateBlockHeader(allocator: Allocator, prev_block: BlockHeader, curr_block: BlockHeader, evmc_revision: u8) !void {
         try checkGasLimit(curr_block.gas_limit, prev_block.gas_limit);
         if (curr_block.gas_used > curr_block.gas_limit)
             return error.GasLimitExceeded;
 
-        // Check base fee.
-        const parent_gas_target = prev_block.gas_limit / params.elasticity_multiplier;
-        const expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
-            prev_block.base_fee_per_gas
-        else if (prev_block.gas_used > parent_gas_target) blk: {
-            const gas_used_delta = prev_block.gas_used - parent_gas_target;
-            const base_fee_per_gas_delta = @max(prev_block.base_fee_per_gas.? * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator, 1);
-            break :blk prev_block.base_fee_per_gas.? + base_fee_per_gas_delta;
-        } else blk: {
-            const gas_used_delta = parent_gas_target - prev_block.gas_used;
-            const base_fee_per_gas_delta = prev_block.base_fee_per_gas.? * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator;
-            break :blk prev_block.base_fee_per_gas.? - base_fee_per_gas_delta;
-        };
-        const expected_val = expected_base_fee_per_gas orelse 0;
-        const actual_val = curr_block.base_fee_per_gas orelse 0;
-        if (expected_val != actual_val)
-            return error.InvalidBaseFee;
+        // Check base fee (EIP-1559, London+).
+        if (prev_block.base_fee_per_gas != null or curr_block.base_fee_per_gas != null) {
+            const parent_gas_target = prev_block.gas_limit / params.elasticity_multiplier;
+            const expected_base_fee_per_gas = if (prev_block.gas_used == parent_gas_target)
+                prev_block.base_fee_per_gas
+            else if (prev_block.gas_used > parent_gas_target) blk: {
+                const gas_used_delta = prev_block.gas_used - parent_gas_target;
+                const base_fee_per_gas_delta = @max(prev_block.base_fee_per_gas.? * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator, 1);
+                break :blk prev_block.base_fee_per_gas.? + base_fee_per_gas_delta;
+            } else blk: {
+                const gas_used_delta = parent_gas_target - prev_block.gas_used;
+                const base_fee_per_gas_delta = prev_block.base_fee_per_gas.? * gas_used_delta / parent_gas_target / params.base_fee_max_change_denominator;
+                break :blk prev_block.base_fee_per_gas.? - base_fee_per_gas_delta;
+            };
+            const expected_val = expected_base_fee_per_gas orelse 0;
+            const actual_val = curr_block.base_fee_per_gas orelse 0;
+            if (expected_val != actual_val)
+                return error.InvalidBaseFee;
+        }
 
         if (curr_block.timestamp <= prev_block.timestamp)
             return error.InvalidTimestamp;
@@ -146,12 +152,15 @@ pub const Blockchain = struct {
         if (curr_block.extra_data.len > 32)
             return error.ExtraDataTooLong;
 
-        if (curr_block.difficulty != 0)
-            return error.InvalidDifficulty;
-        if (!std.mem.eql(u8, &curr_block.nonce, &[_]u8{0} ** 8))
-            return error.InvalidNonce;
-        if (!std.mem.eql(u8, &curr_block.uncle_hash, &blocks.empty_uncle_hash))
-            return error.InvalidUnclesHash;
+        // Post-Merge (Paris+) checks: difficulty and nonce must be zero
+        if (evmc_revision >= 10) { // EVMC_PARIS = 10
+            if (curr_block.difficulty != 0)
+                return error.InvalidDifficulty;
+            if (!std.mem.eql(u8, &curr_block.nonce, &[_]u8{0} ** 8))
+                return error.InvalidNonce;
+            if (!std.mem.eql(u8, &curr_block.uncle_hash, &blocks.empty_uncle_hash))
+                return error.InvalidUnclesHash;
+        }
 
         const prev_block_hash = try common.encodeToRLPAndHash(BlockHeader, allocator, prev_block, null);
         if (!std.mem.eql(u8, &curr_block.parent_hash, &prev_block_hash))
@@ -170,7 +179,7 @@ pub const Blockchain = struct {
         transactions_root: Hash32,
         receipts_root: Hash32,
         logs_bloom: LogsBloom,
-        withdrawals_root: Hash32,
+        withdrawals_root: ?Hash32,
     };
 
     fn applyBody(allocator: Allocator, chain: *Blockchain, state: *StateDB, block: Block, tx_signer: TxSigner) !BlockExecutionResult {
@@ -196,7 +205,7 @@ pub const Blockchain = struct {
                 .coinbase = block.header.fee_recipient,
                 .number = block.header.block_number,
                 .gas_limit = block.header.gas_limit,
-                .base_fee_per_gas = block.header.base_fee_per_gas.?,
+                .base_fee_per_gas = block.header.base_fee_per_gas orelse 0,
                 .gas_price = 0,
                 .time = block.header.timestamp,
                 .prev_randao = block.header.prev_randao,
@@ -236,7 +245,7 @@ pub const Blockchain = struct {
         var total_blob_gas: u64 = 0;
 
         for (block.transactions, 0..) |tx, i| {
-            const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas.?, gas_available, tx_signer);
+            const tx_info = try checkTransaction(allocator, tx, block.header.base_fee_per_gas orelse 0, gas_available, tx_signer);
 
             // EIP-4844: validate max_fee_per_blob_gas >= blob_base_fee
             if (tx == .BlobTx) {
@@ -251,7 +260,7 @@ pub const Blockchain = struct {
                 .coinbase = block.header.fee_recipient,
                 .number = block.header.block_number,
                 .gas_limit = block.header.gas_limit,
-                .base_fee_per_gas = block.header.base_fee_per_gas.?,
+                .base_fee_per_gas = block.header.base_fee_per_gas orelse 0,
                 .gas_price = tx_info.effective_gas_price,
                 .time = block.header.timestamp,
                 .prev_randao = block.header.prev_randao,
@@ -286,7 +295,19 @@ pub const Blockchain = struct {
 
         // TODO: logs bloom calculation.
 
-        for (block.withdrawals) |w| {
+        // Block reward for pre-Merge (pre-Paris) forks
+        if (chain.evmc_revision < 10) { // EVMC_PARIS = 10
+            const block_reward: u256 = if (chain.evmc_revision < 6) // Pre-Constantinople
+                5000000000000000000 // 5 ETH
+            else if (chain.evmc_revision < 8) // Pre-Istanbul (Constantinople/Petersburg)
+                3000000000000000000 // 3 ETH
+            else
+                2000000000000000000; // 2 ETH (post-Constantinople)
+            const coinbase_balance = state.getAccount(block.header.fee_recipient).balance;
+            try state.setBalance(block.header.fee_recipient, coinbase_balance + block_reward);
+        }
+
+        for (block.withdrawals orelse &.{}) |w| {
             const newBalance = state.getAccount(w.address).balance + (w.amount * std.math.pow(u256, 10, 9));
             try state.setBalance(w.address, newBalance);
         }
@@ -296,7 +317,7 @@ pub const Blockchain = struct {
             .transactions_root = try calculateMPTRoot(allocator, block.transactions),
             .receipts_root = try calculateMPTRoot(allocator, receipts),
             .logs_bloom = block.header.logs_bloom,
-            .withdrawals_root = try calculateMPTRoot(allocator, block.withdrawals),
+            .withdrawals_root = if (block.withdrawals) |w| try calculateMPTRoot(allocator, w) else null,
         };
     }
 
