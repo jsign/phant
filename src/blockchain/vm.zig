@@ -149,6 +149,11 @@ const EVMOneHost = struct {
             .block_prev_randao = .{ .bytes = vm.env.prev_randao },
             .chain_id = toEVMCUint256Be(@intFromEnum(vm.env.chain_id)),
             .block_base_fee = toEVMCUint256Be(vm.env.base_fee_per_gas),
+            .blob_base_fee = toEVMCUint256Be(vm.env.blob_base_fee),
+            .blob_hashes = @ptrCast(vm.env.blob_hashes.ptr),
+            .blob_hashes_count = vm.env.blob_hashes.len,
+            .initcodes = null,
+            .initcodes_count = 0,
         };
     }
 

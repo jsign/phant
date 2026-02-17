@@ -27,6 +27,7 @@ pub const Environment = struct {
     chain_id: config.ChainId,
     evmc_revision: u8 = 11, // EVMC_SHANGHAI by default
     blob_base_fee: u256 = 0, // EIP-4844
+    blob_hashes: []const Hash32 = &.{}, // EIP-4844: per-tx blob versioned hashes
     logs: ?*std.array_list.Managed(Log) = null,
 };
 

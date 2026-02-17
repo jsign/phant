@@ -93,6 +93,7 @@ pub const StateDB = struct {
     }
 
     pub fn getAccountOpt(self: StateDB, addr: Address) ?AccountData {
+        if (self.db.capacity() == 0 and self.db.count() == 0) return null;
         const account_data = self.db.get(addr) orelse return null;
         return .{
             .nonce = account_data.nonce,

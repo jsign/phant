@@ -71,9 +71,7 @@ pub const Blockchain = struct {
 
         // Snapshot state before block execution so we can rollback on failure.
         var snap = try self.state.snapshot();
-        errdefer {
-            self.state.restoreFrom(&snap);
-        }
+        errdefer self.state.restoreFrom(&snap);
         defer snap.deinit();
 
         // Add the current block to the last 256 block hashes.
@@ -268,10 +266,10 @@ pub const Blockchain = struct {
                 .chain_id = chain.chain_id,
                 .evmc_revision = chain.evmc_revision,
                 .blob_base_fee = blob_base_fee,
+                .blob_hashes = tx.getBlobVersionedHashes(),
             };
 
             std.log.debug("applyBody: processing tx {d}", .{i});
-            try state.startTx();
             const exec_tx_result = try processTransaction(allocator, env, tx);
             std.log.debug("applyBody: tx {d} done", .{i});
             gas_available -= exec_tx_result.gas_used;
@@ -380,6 +378,9 @@ pub const Blockchain = struct {
         if (!validateTransaction(tx, env.evmc_revision))
             return error.InvalidTransaction;
 
+        // Start a new transaction context (must be after validation to avoid state corruption on invalid txs)
+        try env.state.startTx();
+
         const sender = env.origin;
 
         const gas_fee = tx.getGasLimit() * tx.getGasPrice();
@@ -481,10 +482,15 @@ pub const Blockchain = struct {
     }
 
     fn validateTransaction(tx: transaction.Tx, evmc_revision: u8) bool {
-        const min_gas = if (evmc_revision >= 13)
-            @max(calculateIntrinsicCost(tx), calculateFloorCost(tx))
-        else
-            calculateIntrinsicCost(tx);
+        // Validate tx type is allowed for this fork
+        switch (tx) {
+            .AccessListTx => if (evmc_revision < 8) return false, // EVMC_BERLIN = 8
+            .FeeMarketTx => if (evmc_revision < 9) return false, // EVMC_LONDON = 9
+            .BlobTx => if (evmc_revision < 12) return false, // EVMC_CANCUN = 12
+            .LegacyTx => {},
+        }
+        // Intrinsic gas check (always). EIP-7623 floor is applied post-execution, not here.
+        const min_gas = calculateIntrinsicCost(tx);
         if (min_gas > tx.getGasLimit())
             return false;
         if (tx.getNonce() >= (2 << 64) - 1)
