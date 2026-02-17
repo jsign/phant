@@ -69,6 +69,13 @@ pub const Blockchain = struct {
         defer arena.deinit();
         const allocator = arena.allocator();
 
+        // Snapshot state before block execution so we can rollback on failure.
+        var snap = try self.state.snapshot();
+        errdefer {
+            self.state.restoreFrom(&snap);
+        }
+        defer snap.deinit();
+
         // Add the current block to the last 256 block hashes.
         try self.fork.update_parent_block_hash(block.header.block_number - 1, block.header.parent_hash);
 

@@ -227,6 +227,52 @@ pub const StateDB = struct {
         };
     }
 
+    /// Restore state from a snapshot, replacing the current state entirely.
+    /// The snapshot is consumed (moved into self).
+    pub fn restoreFrom(self: *StateDB, snap: *StateDB) void {
+        // Free current state
+        {
+            var it = self.db.iterator();
+            while (it.next()) |kv| {
+                kv.value_ptr.deinit();
+            }
+        }
+        self.db.deinit();
+        if (self.original_db) |*odb| {
+            var it2 = odb.iterator();
+            while (it2.next()) |kv| {
+                kv.value_ptr.deinit();
+            }
+            odb.deinit();
+        }
+        self.accessed_accounts.deinit();
+        self.accessed_storage_keys.deinit();
+        self.touched_addresses.deinit();
+        self.created_accounts.deinit();
+        self.accounts_to_destroy.deinit();
+        self.transient_storage.deinit();
+
+        // Move snapshot fields into self
+        self.db = snap.db;
+        self.original_db = snap.original_db;
+        self.accessed_accounts = snap.accessed_accounts;
+        self.accessed_storage_keys = snap.accessed_storage_keys;
+        self.touched_addresses = snap.touched_addresses;
+        self.created_accounts = snap.created_accounts;
+        self.accounts_to_destroy = snap.accounts_to_destroy;
+        self.transient_storage = snap.transient_storage;
+
+        // Invalidate snapshot to prevent double-free on deinit
+        snap.db = AccountDB.init(snap.allocator);
+        snap.original_db = null;
+        snap.accessed_accounts = AddressSet.init(snap.allocator);
+        snap.accessed_storage_keys = AddressKeySet.init(snap.allocator);
+        snap.touched_addresses = ArrayList(Address).init(snap.allocator);
+        snap.created_accounts = AddressSet.init(snap.allocator);
+        snap.accounts_to_destroy = AddressSet.init(snap.allocator);
+        snap.transient_storage = std.AutoHashMap(AddressKey, Bytes32).init(snap.allocator);
+    }
+
     fn dbDeepClone(allocator: Allocator, db: *AccountDB) !AccountDB {
         var ret = AccountDB.init(allocator);
         try ret.ensureTotalCapacity(db.capacity());
