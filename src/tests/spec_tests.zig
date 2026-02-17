@@ -102,12 +102,33 @@ pub const FixtureTest = struct {
         var chain = try blockchain.Blockchain.init(allocator, config.ChainId.Mainnet, &statedb, parent_block.header, fork);
 
         // Set EVMC revision based on network
-        if (std.mem.eql(u8, self.network, "Cancun")) {
-            chain.evmc_revision = 12; // EVMC_CANCUN
-        } else if (std.mem.eql(u8, self.network, "Prague")) {
-            chain.evmc_revision = 13; // EVMC_PRAGUE
-        } else if (std.mem.eql(u8, self.network, "Shanghai")) {
-            chain.evmc_revision = 11; // EVMC_SHANGHAI
+        const evmc_revisions = .{
+            .{ "Frontier", 0 },
+            .{ "Homestead", 1 },
+            .{ "EIP150", 2 }, // Tangerine Whistle
+            .{ "EIP158", 3 }, // Spurious Dragon
+            .{ "Byzantium", 4 },
+            .{ "Constantinople", 5 },
+            .{ "ConstantinopleFix", 6 }, // Petersburg
+            .{ "Istanbul", 7 },
+            .{ "Berlin", 8 },
+            .{ "London", 9 },
+            .{ "Paris", 10 }, // The Merge
+            .{ "Shanghai", 11 },
+            .{ "Cancun", 12 },
+            .{ "Prague", 13 },
+            // Transition forks use the target revision
+            .{ "FrontierToHomesteadAt5", 1 },
+            .{ "HomesteadToEIP150At5", 2 },
+            .{ "HomesteadToDaoAt5", 1 },
+            .{ "EIP158ToByzantiumAt5", 4 },
+            .{ "ByzantiumToConstantinopleFixAt5", 6 },
+        };
+        inline for (evmc_revisions) |entry| {
+            if (std.mem.eql(u8, self.network, entry[0])) {
+                chain.evmc_revision = entry[1];
+                break;
+            }
         }
 
         // Execute blocks.

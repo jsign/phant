@@ -163,8 +163,17 @@ pub fn build(b: *std.Build) void {
             "mkdir -p '" ++ fixtures_dir ++ "' && " ++
             "curl -sL '" ++ fixtures_url ++ "' | " ++
             "tar xz --strip-components=2 -C '" ++ fixtures_dir ++ "' " ++
+            "'fixtures/blockchain_tests/frontier' " ++
+            "'fixtures/blockchain_tests/homestead' " ++
+            "'fixtures/blockchain_tests/byzantium' " ++
+            "'fixtures/blockchain_tests/constantinople' " ++
+            "'fixtures/blockchain_tests/istanbul' " ++
+            "'fixtures/blockchain_tests/berlin' " ++
+            "'fixtures/blockchain_tests/london' " ++
+            "'fixtures/blockchain_tests/paris' " ++
             "'fixtures/blockchain_tests/shanghai' " ++
-            "'fixtures/blockchain_tests/cancun'; " ++
+            "'fixtures/blockchain_tests/cancun' " ++
+            "'fixtures/blockchain_tests/prague'; " ++
             "echo \"Extracted $(find '" ++ fixtures_dir ++ "' -name '*.json' | wc -l) test fixture files.\"; " ++
             "fi",
     });
