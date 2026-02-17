@@ -217,7 +217,7 @@ pub const StateDB = struct {
         return StateDB{
             .allocator = self.allocator,
             .db = try dbDeepClone(self.allocator, &self.db),
-            .original_db = try dbDeepClone(self.allocator, &self.original_db.?),
+            .original_db = if (self.original_db) |*odb| try dbDeepClone(self.allocator, odb) else null,
             .accessed_accounts = try self.accessed_accounts.clone(),
             .accessed_storage_keys = try self.accessed_storage_keys.clone(),
             .touched_addresses = try self.touched_addresses.clone(),
