@@ -1,3 +1,6 @@
 [submodule "evmone"]
 	path = evmone
 	url = https://github.com/tellabg/evmone.git
+[submodule "c-kzg-4844"]
+	path = c-kzg-4844
+	url = https://github.com/ethereum/c-kzg-4844.git

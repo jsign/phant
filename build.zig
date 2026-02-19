@@ -109,6 +109,36 @@ pub fn build(b: *std.Build) void {
         .root_module = evmone_mod,
     });
 
+    // Build c-kzg-4844 + blst as a native static library
+    const ckzg_mod = b.createModule(.{
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    // blst: server.c (unity build including all blst sources)
+    ckzg_mod.addCSourceFiles(.{
+        .root = b.path("c-kzg-4844/blst/src"),
+        .files = &.{"server.c"},
+        .flags = &.{ "-O2", "-fno-builtin", "-fPIC", "-D__BLST_PORTABLE__" },
+    });
+    // blst: pre-generated assembly
+    ckzg_mod.addAssemblyFile(b.path("c-kzg-4844/blst/build/assembly.S"));
+    // c-kzg: ckzg.c (unity build including all c-kzg sources)
+    ckzg_mod.addCSourceFiles(.{
+        .root = b.path("c-kzg-4844/src"),
+        .files = &.{"ckzg.c"},
+        .flags = &.{ "-O2", "-fPIC" },
+    });
+    // Include paths
+    ckzg_mod.addIncludePath(b.path("c-kzg-4844/blst/bindings")); // blst.h
+    ckzg_mod.addIncludePath(b.path("c-kzg-4844/src")); // c-kzg headers
+
+    const ckzg_lib = b.addLibrary(.{
+        .name = "ckzg",
+        .linkage = .static,
+        .root_module = ckzg_mod,
+    });
+
     // Create the phant library module (exported for downstream consumers)
     const phant_mod = b.addModule("phant", .{
         .root_source_file = b.path("src/lib.zig"),
@@ -122,7 +152,10 @@ pub fn build(b: *std.Build) void {
     });
     phant_mod.addIncludePath(b.path("evmone/include/evmone"));
     phant_mod.addIncludePath(b.path("evmone/evmc/include"));
+    phant_mod.addIncludePath(b.path("c-kzg-4844/src"));
+    phant_mod.addIncludePath(b.path("c-kzg-4844/blst/bindings"));
     phant_mod.linkLibrary(evmone_lib);
+    phant_mod.linkLibrary(ckzg_lib);
     phant_mod.linkLibrary(depSecp256k1.artifact("secp256k1"));
 
     // Unit tests
@@ -137,8 +170,11 @@ pub fn build(b: *std.Build) void {
         },
     });
     test_mod.addIncludePath(b.path("evmone/include/evmone"));
+    test_mod.addIncludePath(b.path("c-kzg-4844/src"));
+    test_mod.addIncludePath(b.path("c-kzg-4844/blst/bindings"));
     test_mod.addIncludePath(b.path("evmone/evmc/include"));
     test_mod.linkLibrary(evmone_lib);
+    test_mod.linkLibrary(ckzg_lib);
     test_mod.linkLibrary(depSecp256k1.artifact("secp256k1"));
 
     const unit_tests = b.addTest(.{
