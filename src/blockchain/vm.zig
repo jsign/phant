@@ -5,6 +5,7 @@ const std = @import("std");
 const types = @import("../types/types.zig");
 const common = @import("../common/common.zig");
 const params = @import("params.zig");
+const precompiles = @import("precompiles.zig");
 const blockchain_types = @import("types.zig");
 const Allocator = std.mem.Allocator;
 const AddressSet = common.AddressSet;
@@ -528,7 +529,10 @@ const EVMOneHost = struct {
             };
         }
 
-        var result = vm.evm.*.execute.?(
+        // Check if the target is a precompile — execute natively instead of via EVM.
+        const precompile_result = precompiles.execute(fromEVMCAddress(msg.code_address), if (msg.input_size > 0) msg.input_data[0..msg.input_size] else &[_]u8{}, msg.gas, vm.env.evmc_revision);
+
+        var result = if (precompile_result) |pr| pr else vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),
             @ptrCast(vm),
