@@ -69,6 +69,18 @@ pub const VM = struct {
     // processMessageCall executes a message call.
     pub fn processMessageCall(self: *VM, msg: Message) !MessageCallOutput {
         const evmc_message = if (msg.target) |target| blk: {
+            // EIP-7702: resolve delegation for depth-0 calls.
+            // If the target has delegation code (0xef0100 || addr), execute the delegate's code.
+            const code_target = blk2: {
+                const target_code = self.env.state.getAccount(target).code;
+                if (target_code.len == 23 and std.mem.eql(u8, target_code[0..3], &.{ 0xef, 0x01, 0x00 })) {
+                    var delegate_addr: Address = undefined;
+                    @memcpy(&delegate_addr, target_code[3..23]);
+                    break :blk2 delegate_addr;
+                }
+                break :blk2 target;
+            };
+
             const evmc_message: evmc.struct_evmc_message = .{
                 .kind = evmc.EVMC_CALL,
                 .flags = 0,
@@ -83,14 +95,17 @@ pub const VM = struct {
                     std.mem.writeInt(u256, &tx_value, msg.value, .big);
                     break :blk2 .{ .bytes = tx_value };
                 },
-                .create2_salt = undefined, // EVMC docs: field only mandatory for CREATE2 kind which doesn't apply at depth 0.
-                .code_address = toEVMCAddress(msg.target),
+                .create2_salt = undefined,
+                .code_address = toEVMCAddress(code_target),
             };
 
-            try self.env.state.incrementNonce(msg.sender);
+            // Note: sender nonce is incremented in processTransaction before EVM call,
+            // not here, to support EIP-7702 self-sponsored transactions.
 
             break :blk evmc_message;
         } else blk: {
+            // For CREATE at depth 0: use current nonce for address computation.
+            const sender_nonce: u64 = @intCast(self.env.state.getAccount(msg.sender).nonce);
             break :blk evmc.struct_evmc_message{
                 .kind = evmc.EVMC_CREATE,
                 .flags = 0,
@@ -98,7 +113,6 @@ pub const VM = struct {
                 .gas = @intCast(msg.gas),
                 .recipient = .{
                     .bytes = blk2: {
-                        const sender_nonce: u64 = @intCast(self.env.state.getAccount(msg.sender).nonce);
                         break :blk2 common.computeCREATEContractAddress(self.allocator, msg.sender, sender_nonce) catch unreachable;
                     },
                 },

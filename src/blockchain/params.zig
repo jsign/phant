@@ -30,6 +30,12 @@ pub const max_blob_gas_per_block: u64 = 786432; // 6 * gas_per_blob
 pub const blob_base_fee_update_fraction: u64 = 3338477;
 pub const min_blob_base_fee: u64 = 1;
 
+// EIP-7702: SetCode transaction
+pub const per_auth_base_cost: u64 = 25000; // CallNewAccountGas per authorization in intrinsic gas
+pub const tx_auth_tuple_gas: u64 = 12500; // Per auth tuple gas (EIP-7702)
+pub const per_empty_account_cost: u64 = 25000;
+pub const delegation_magic: [3]u8 = .{ 0xef, 0x01, 0x00 }; // delegation indicator prefix
+
 pub const stack_depth_limit = 1024;
 
 pub const precompiled_contract_addresses = [_]Address{

@@ -169,6 +169,17 @@ pub const StateDB = struct {
         try self.db.put(addr, try AccountState.init(self.allocator, addr, 0, 0, code));
     }
 
+    /// EIP-7702: Set or replace delegation code on an account.
+    /// Unlike setContractCode, this allows overwriting existing code (for delegation replacement).
+    pub fn setDelegationCode(self: *StateDB, addr: Address, code: []const u8) !void {
+        const account = self.db.getPtr(addr);
+        if (account) |acc| {
+            acc.code = try acc.allocator.dupe(u8, code);
+            return;
+        }
+        try self.db.put(addr, try AccountState.init(self.allocator, addr, 0, 0, code));
+    }
+
     pub fn accountExistsAndIsEmpty(self: *StateDB, addr: Address) bool {
         const account = self.db.get(addr) orelse return false;
         return account.nonce == 0 and account.balance == 0 and account.code.len == 0;

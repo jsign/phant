@@ -269,8 +269,10 @@ test "execution-spec-tests" {
     var failed: usize = 0;
 
     const test_files = [_][]const u8{
-        // EIP-7623 access list tests (debugging)
+        // EIP-7623 access list tests (includes contract_creating tests)
         "src/tests/fixtures/prague/eip7623_increase_calldata_cost/test_transaction_validity_type_1_type_2.json",
+        // EIP-7702 SetCode tx tests
+        "src/tests/fixtures/prague/eip7702_set_code_tx/test_set_code_to_sstore.json",
     };
 
     for (test_files) |filepath| {

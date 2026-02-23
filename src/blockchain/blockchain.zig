@@ -281,6 +281,7 @@ pub const Blockchain = struct {
                 .AccessListTx => 1,
                 .FeeMarketTx => 2,
                 .BlobTx => 3,
+                .SetCodeTx => 4,
             };
             receipts[i] = receipt;
 
@@ -355,7 +356,7 @@ pub const Blockchain = struct {
         const sender_address = try tx_signer.get_sender(allocator, tx);
 
         const effective_gas_price = switch (tx) {
-            inline .FeeMarketTx, .BlobTx => |fm_tx| blk: {
+            inline .FeeMarketTx, .BlobTx, .SetCodeTx => |fm_tx| blk: {
                 if (fm_tx.max_fee_per_gas < fm_tx.max_priority_fee_per_gas)
                     return error.InvalidMaxFeePerGas;
                 if (fm_tx.max_fee_per_gas < base_fee_per_gas)
@@ -405,6 +406,13 @@ pub const Blockchain = struct {
         const sender_balance_after_gas_fee = sender_account.balance - effective_gas_fee - blob_gas_cost;
         try env.state.setBalance(sender, sender_balance_after_gas_fee);
 
+        // Increment sender nonce for non-CREATE txs (must happen before EIP-7702
+        // authorization processing, since self-sponsored txs check authority nonce
+        // after sender nonce increment). CREATE nonce is handled in processMessageCall.
+        if (tx.getTo() != null) {
+            try env.state.incrementNonce(sender);
+        }
+
         try env.state.putAccessedAccount(env.coinbase);
         switch (tx) {
             .LegacyTx => {},
@@ -427,6 +435,53 @@ pub const Blockchain = struct {
             try env.state.putAccessedAccount(precompile_addr);
         }
 
+        // EIP-7702: Process authorization list (SetCode tx).
+        // For each authorization, recover the authority, validate, set delegation code.
+        var auth_refund: u64 = 0;
+        if (tx == .SetCodeTx) {
+            const ecdsa_signer = @import("../crypto/crypto.zig").ecdsa.Signer.init() catch unreachable;
+            for (tx.SetCodeTx.authorization_list) |auth| {
+                // Recover authority address from authorization signature.
+                const authority = recoverAuthority(allocator, ecdsa_signer, auth, @intFromEnum(env.chain_id)) catch |err| {
+                    std.log.debug("EIP-7702: auth recovery failed: {}", .{err});
+                    continue;
+                };
+
+                // Check if authority exists BEFORE adding to access list (for refund calc).
+                const authority_exists = env.state.getAccountOpt(authority) != null;
+
+                // Add authority to accessed addresses (even if auth is invalid, per EIP-7702).
+                try env.state.putAccessedAccount(authority);
+
+                // Verify authority nonce matches.
+                const authority_account = env.state.getAccount(authority);
+                if (authority_account.nonce != auth.nonce) continue;
+
+                // Verify authority code is empty or already a delegation.
+                if (authority_account.code.len > 0) {
+                    if (authority_account.code.len != 23) continue;
+                    if (!std.mem.eql(u8, authority_account.code[0..3], &params.delegation_magic)) continue;
+                }
+
+                // If authority already exists in state, refund the new account cost difference.
+                // Intrinsic gas charges CallNewAccountGas (25000), but existing accounts
+                // only need TxAuthTupleGas (12500), so refund the difference.
+                if (authority_exists) {
+                    auth_refund += params.per_auth_base_cost - params.tx_auth_tuple_gas;
+                }
+
+                // Increment authority nonce.
+                try env.state.incrementNonce(authority);
+
+                // Set delegation code: 0xef0100 || address.
+                var delegation_code: [23]u8 = undefined;
+                @memcpy(delegation_code[0..3], &params.delegation_magic);
+                @memcpy(delegation_code[3..23], &auth.address);
+                try env.state.setDelegationCode(authority, &delegation_code);
+                std.log.debug("EIP-7702: set delegation on 0x{x} -> 0x{x}", .{ authority, auth.address });
+            }
+        }
+
         const message: Message = .{
             .sender = sender,
             .target = tx.getTo(),
@@ -440,7 +495,7 @@ pub const Blockchain = struct {
         const output = try processMessageCall(allocator, message, env_with_logs);
 
         const gas_used = tx.getGasLimit() - output.gas_left;
-        const gas_refund = @min(gas_used / 5, output.refund_counter);
+        const gas_refund = @min(gas_used / 5, output.refund_counter + auth_refund);
         const standard_gas_used = gas_used - gas_refund;
 
         // EIP-7623 (Prague+): floor cost for calldata-heavy transactions.
@@ -489,6 +544,7 @@ pub const Blockchain = struct {
             .AccessListTx => if (evmc_revision < 8) return false, // EVMC_BERLIN = 8
             .FeeMarketTx => if (evmc_revision < 9) return false, // EVMC_LONDON = 9
             .BlobTx => if (evmc_revision < 12) return false, // EVMC_CANCUN = 12
+            .SetCodeTx => if (evmc_revision < 13) return false, // EVMC_PRAGUE = 13
             .LegacyTx => {},
         }
         // Intrinsic gas check (always).
@@ -507,6 +563,10 @@ pub const Blockchain = struct {
             for (tx.BlobTx.blob_versioned_hashes) |h| {
                 if (h[0] != 0x01) return false;
             }
+        }
+        // EIP-7702: SetCode tx must have a non-empty authorization list
+        if (tx == .SetCodeTx) {
+            if (tx.SetCodeTx.authorization_list.len == 0) return false;
         }
         return true;
     }
@@ -538,7 +598,10 @@ pub const Blockchain = struct {
             },
         }
 
-        return params.tx_base_cost + data_cost + create_cost + access_list_cost;
+        // EIP-7702: authorization list cost
+        const auth_cost = tx.getAuthorizationList().len * params.per_auth_base_cost;
+
+        return params.tx_base_cost + data_cost + create_cost + access_list_cost + auth_cost;
     }
 
     /// EIP-7623: floor cost for calldata-heavy transactions (Prague+).
@@ -548,6 +611,44 @@ pub const Blockchain = struct {
         const tokens = calldataTokens(tx);
         const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(tx.getData().len) else 0;
         return params.tx_base_cost + tokens * params.tx_total_cost_floor_per_token + create_cost;
+    }
+
+    /// Recover the authority address from an EIP-7702 authorization tuple.
+    /// Signing hash: keccak256(0x05 || rlp([chain_id, address, nonce]))
+    fn recoverAuthority(allocator: Allocator, ecdsa_signer: @import("../crypto/crypto.zig").ecdsa.Signer, auth: transaction.Authorization, chain_id: u64) !Address {
+        // Validate chain_id: must be 0 (any chain) or match current chain.
+        if (auth.chain_id != 0 and auth.chain_id != chain_id)
+            return error.InvalidAuthChainId;
+
+        // Validate signature fields.
+        @import("../crypto/crypto.zig").ecdsa.validateSignatureFields(auth.r, auth.s) catch
+            return error.InvalidAuthSignature;
+
+        // Build signing payload: 0x05 || rlp([chain_id, address, nonce])
+        const AuthRLP = struct {
+            chain_id: u64,
+            address: Address,
+            nonce: u64,
+        };
+        var out = std.array_list.Managed(u8).init(allocator);
+        defer out.deinit();
+        try rlp.serialize(AuthRLP, allocator, .{
+            .chain_id = auth.chain_id,
+            .address = auth.address,
+            .nonce = auth.nonce,
+        }, &out);
+
+        const hasher = @import("../crypto/crypto.zig").hasher;
+        const auth_hash = try hasher.keccak256WithPrefix(&[_]u8{0x05}, out.items);
+
+        // Recover public key from signature.
+        var sig: [65]u8 = undefined;
+        std.mem.writeInt(u256, sig[0..32], auth.r, .big);
+        std.mem.writeInt(u256, sig[32..64], auth.s, .big);
+        sig[64] = @intCast(auth.y_parity);
+
+        const pubkey = try ecdsa_signer.erecover(sig, auth_hash);
+        return hasher.keccak256(pubkey[1..])[12..].*;
     }
 
     fn initCodeCost(code_length: usize) u64 {
