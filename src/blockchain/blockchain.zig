@@ -83,7 +83,7 @@ pub const Blockchain = struct {
 
         // Post execution checks.
         if (result.gas_used != block.header.gas_used) {
-            std.log.err("gas_used mismatch in block {d}: got {d}, expected {d}", .{ block.header.block_number, result.gas_used, block.header.gas_used });
+            std.log.err("gas_used mismatch in block {d}: got {d}, expected {d}, diff {d}", .{ block.header.block_number, result.gas_used, block.header.gas_used, @as(i64, @intCast(result.gas_used)) - @as(i64, @intCast(block.header.gas_used)) });
             return error.InvalidGasUsed;
         }
         if (!std.mem.eql(u8, &result.transactions_root, &block.header.transactions_root)) {
@@ -270,7 +270,7 @@ pub const Blockchain = struct {
 
             std.log.debug("applyBody: processing tx {d}", .{i});
             const exec_tx_result = try processTransaction(allocator, env, tx);
-            std.log.debug("applyBody: tx {d} done", .{i});
+            std.log.debug("applyBody: blk {d} tx {d} done, gas_used={d}, gas_limit={d}", .{ block.header.block_number, i, exec_tx_result.gas_used, tx.getGasLimit() });
             gas_available -= exec_tx_result.gas_used;
 
             // Create receipt.

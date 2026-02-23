@@ -532,7 +532,16 @@ const EVMOneHost = struct {
         // Check if the target is a precompile — execute natively instead of via EVM.
         const precompile_result = precompiles.execute(fromEVMCAddress(msg.code_address), if (msg.input_size > 0) msg.input_data[0..msg.input_size] else &[_]u8{}, msg.gas, vm.env.evmc_revision);
 
-        var result = if (precompile_result) |pr| pr else vm.evm.*.execute.?(
+        var result = if (precompile_result) |pr| evmc.struct_evmc_result{
+            .status_code = @intCast(pr.status_code),
+            .gas_left = pr.gas_left,
+            .gas_refund = pr.gas_refund,
+            .output_data = pr.output_data,
+            .output_size = pr.output_size,
+            .release = null,
+            .create_address = std.mem.zeroes(evmc.struct_evmc_address),
+            .padding = [_]u8{0} ** 4,
+        } else vm.evm.*.execute.?(
             vm.evm,
             @ptrCast(&vm.host),
             @ptrCast(vm),

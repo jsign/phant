@@ -2,9 +2,6 @@
 /// Only the point evaluation precompile (0x0a, EIP-4844) is implemented here;
 /// other precompiles are handled by evmone internally.
 const std = @import("std");
-const evmc = @cImport({
-    @cInclude("evmc/evmc.h");
-});
 const crypto_kzg = @import("../crypto/kzg.zig");
 const types = @import("../types/types.zig");
 const Address = types.Address;
@@ -35,15 +32,26 @@ const BLS_MODULUS: [32]u8 = .{
 /// The return data for a successful point evaluation: FIELD_ELEMENTS_PER_BLOB and BLS_MODULUS.
 const RETURN_DATA: [64]u8 = blk: {
     var data = [_]u8{0} ** 64;
-    // FIELD_ELEMENTS_PER_BLOB = 4096 as big-endian u256
-    data[31] = 0x10;
-    data[30] = 0x00; // 4096 = 0x1000
+    // FIELD_ELEMENTS_PER_BLOB = 4096 = 0x1000 as big-endian u256
+    data[30] = 0x10;
+    data[31] = 0x00;
     // BLS_MODULUS as big-endian u256
     @memcpy(data[32..64], &BLS_MODULUS);
     break :blk data;
 };
 
 var return_data_static: [64]u8 = RETURN_DATA;
+
+/// Result of a precompile execution (evmc-independent).
+pub const PrecompileResult = struct {
+    success: bool,
+    gas_left: i64,
+    gas_refund: i64,
+    output_data: ?[*]const u8,
+    output_size: usize,
+    /// Status code matching EVMC conventions: 0 = success, 1 = failure, 3 = out of gas.
+    status_code: c_int,
+};
 
 /// Check if an address is a precompile that we handle natively.
 fn isNativePrecompile(addr: Address, revision: c_uint) bool {
@@ -54,7 +62,7 @@ fn isNativePrecompile(addr: Address, revision: c_uint) bool {
 }
 
 /// Execute a precompile if the address matches. Returns null if not a native precompile.
-pub fn execute(addr: Address, input: []const u8, gas_available: i64, revision: c_uint) ?evmc.struct_evmc_result {
+pub fn execute(addr: Address, input: []const u8, gas_available: i64, revision: c_uint) ?PrecompileResult {
     if (!isNativePrecompile(addr, revision)) return null;
 
     if (std.mem.eql(u8, &addr, &POINT_EVALUATION_ADDRESS)) {
@@ -66,13 +74,16 @@ pub fn execute(addr: Address, input: []const u8, gas_available: i64, revision: c
 
 /// EIP-4844 point evaluation precompile.
 /// Input: versioned_hash (32) || z (32) || y (32) || commitment (48) || proof (48)
-fn pointEvaluation(input: []const u8, gas_available: i64) evmc.struct_evmc_result {
+fn pointEvaluation(input: []const u8, gas_available: i64) PrecompileResult {
+    const EVMC_OUT_OF_GAS: c_int = 3;
+    const EVMC_PRECOMPILE_FAILURE: c_int = 1;
+
     // Check gas
     if (gas_available < POINT_EVALUATION_GAS) {
-        return failResult(evmc.EVMC_OUT_OF_GAS);
+        return failResult(EVMC_OUT_OF_GAS);
     }
     if (input.len != POINT_EVALUATION_INPUT_SIZE) {
-        return failResult(evmc.EVMC_PRECOMPILE_FAILURE);
+        return failResult(EVMC_PRECOMPILE_FAILURE);
     }
 
     const versioned_hash = input[0..32];
@@ -83,7 +94,7 @@ fn pointEvaluation(input: []const u8, gas_available: i64) evmc.struct_evmc_resul
 
     // Verify versioned hash matches commitment
     if (versioned_hash[0] != VERSIONED_HASH_VERSION) {
-        return failResult(evmc.EVMC_PRECOMPILE_FAILURE);
+        return failResult(EVMC_PRECOMPILE_FAILURE);
     }
 
     // Compute kzg_to_versioned_hash(commitment) and compare
@@ -92,7 +103,7 @@ fn pointEvaluation(input: []const u8, gas_available: i64) evmc.struct_evmc_resul
     commitment_hash[0] = VERSIONED_HASH_VERSION;
 
     if (!std.mem.eql(u8, versioned_hash, &commitment_hash)) {
-        return failResult(evmc.EVMC_PRECOMPILE_FAILURE);
+        return failResult(EVMC_PRECOMPILE_FAILURE);
     }
 
     // Verify KZG proof using c-kzg
@@ -100,39 +111,35 @@ fn pointEvaluation(input: []const u8, gas_available: i64) evmc.struct_evmc_resul
     const c_proof: *const crypto_kzg.KZGProof = @ptrCast(proof.ptr);
 
     // Load trusted setup (lazily initialized)
-    const setup = getTrustedSetup() orelse return failResult(evmc.EVMC_PRECOMPILE_FAILURE);
+    const setup = getTrustedSetup() orelse return failResult(EVMC_PRECOMPILE_FAILURE);
 
     const ok = setup.verifyProof(c_commitment, z[0..32], y[0..32], c_proof) catch {
-        return failResult(evmc.EVMC_PRECOMPILE_FAILURE);
+        return failResult(EVMC_PRECOMPILE_FAILURE);
     };
 
     if (!ok) {
-        return failResult(evmc.EVMC_PRECOMPILE_FAILURE);
+        return failResult(EVMC_PRECOMPILE_FAILURE);
     }
 
     // Return FIELD_ELEMENTS_PER_BLOB and BLS_MODULUS
     return .{
-        .status_code = evmc.EVMC_SUCCESS,
+        .success = true,
         .gas_left = gas_available - POINT_EVALUATION_GAS,
         .gas_refund = 0,
         .output_data = &return_data_static,
         .output_size = 64,
-        .release = null,
-        .create_address = std.mem.zeroes(evmc.struct_evmc_address),
-        .padding = [_]u8{0} ** 4,
+        .status_code = 0, // EVMC_SUCCESS
     };
 }
 
-fn failResult(status: c_uint) evmc.struct_evmc_result {
+fn failResult(status_code: c_int) PrecompileResult {
     return .{
-        .status_code = status,
+        .success = false,
         .gas_left = 0,
         .gas_refund = 0,
         .output_data = null,
         .output_size = 0,
-        .release = null,
-        .create_address = std.mem.zeroes(evmc.struct_evmc_address),
-        .padding = [_]u8{0} ** 4,
+        .status_code = status_code,
     };
 }
 
@@ -146,7 +153,7 @@ fn getTrustedSetup() ?*const crypto_kzg.TrustedSetup {
         return null;
     }
     setup_initialized = true;
-    trusted_setup = crypto_kzg.TrustedSetup.initFromFile("c-kzg-4844/src/setup/trusted_setup.txt") catch {
+    trusted_setup = crypto_kzg.TrustedSetup.initFromFile("c-kzg-4844/src/trusted_setup.txt") catch {
         std.log.err("Failed to load KZG trusted setup", .{});
         return null;
     };
