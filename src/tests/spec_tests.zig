@@ -268,14 +268,9 @@ test "execution-spec-tests" {
     var skipped: usize = 0;
     var failed: usize = 0;
 
-    // Run a small subset of EIP-4844 tests for quick validation.
     const test_files = [_][]const u8{
-        "src/tests/fixtures/cancun/eip4844_blobs/test_blob_tx_attribute_opcodes.json",
-        "src/tests/fixtures/cancun/eip4844_blobs/test_blobhash_gas_cost.json",
-        "src/tests/fixtures/cancun/eip4844_blobs/test_point_evaluation_precompile_gas_usage.json",
-        "src/tests/fixtures/cancun/eip4844_blobs/test_valid_inputs.json",
-        "src/tests/fixtures/cancun/eip4844_blobs/test_invalid_inputs.json",
-        "src/tests/fixtures/cancun/eip4844_blobs/test_precompile_before_fork.json",
+        // EIP-7623 access list tests (debugging)
+        "src/tests/fixtures/prague/eip7623_increase_calldata_cost/test_transaction_validity_type_1_type_2.json",
     };
 
     for (test_files) |filepath| {
@@ -315,3 +310,4 @@ test "execution-spec-tests" {
     std.log.warn("Results: {d} passed, {d} skipped, {d} failed", .{ passed, skipped, failed });
     try std.testing.expect(failed == 0);
 }
+

@@ -542,23 +542,12 @@ pub const Blockchain = struct {
     }
 
     /// EIP-7623: floor cost for calldata-heavy transactions (Prague+).
-    /// gas_limit must be >= this value for the tx to be valid.
+    /// Floor = 21000 + TOTAL_COST_FLOOR_PER_TOKEN * tokens + CREATE_GAS (if contract creation).
+    /// Per EIP-7623, access list cost is NOT included in the floor.
     fn calculateFloorCost(tx: transaction.Tx) u64 {
         const tokens = calldataTokens(tx);
         const create_cost = if (tx.getTo() == null) params.tx_create_cost + initCodeCost(tx.getData().len) else 0;
-
-        var access_list_cost: u64 = 0;
-        switch (tx) {
-            .LegacyTx => {},
-            inline else => |al_tx| {
-                for (al_tx.access_list) |al| {
-                    access_list_cost += params.tx_access_list_address_cost;
-                    access_list_cost += al.storage_keys.len * params.tx_access_list_storage_key_cost;
-                }
-            },
-        }
-
-        return params.tx_base_cost + tokens * params.tx_total_cost_floor_per_token + create_cost + access_list_cost;
+        return params.tx_base_cost + tokens * params.tx_total_cost_floor_per_token + create_cost;
     }
 
     fn initCodeCost(code_length: usize) u64 {

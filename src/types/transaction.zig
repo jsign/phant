@@ -77,10 +77,9 @@ pub const Tx = union(TxTypes) {
             return size;
         }
         var str: []const u8 = undefined;
-        const size = try rlp.deserialize([]const u8, arena, serialized, &str);
+        const consumed = try rlp.deserialize([]const u8, arena, serialized, &str);
         self.* = try Tx.decode(arena, str);
-
-        return size;
+        return consumed;
     }
 
     pub fn hash(self: Tx, allocator: Allocator) !Hash32 {
