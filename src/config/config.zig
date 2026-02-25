@@ -1,9 +1,6 @@
 const std = @import("std");
 const json = std.json;
 const Allocator = std.mem.Allocator;
-const ptable = @import("pretty-table");
-const Table = ptable.Table;
-const String = ptable.String;
 
 pub const ChainId = enum(u64) {
     SpecTest = 0,
@@ -65,28 +62,8 @@ pub const ChainConfig = struct {
     }
 
     pub fn dump(self: *Self, allocator: Allocator) !void {
-        const table = Table(3){
-            .header = [_]String{ "Fork", "Block number", "Timestamp" },
-            .rows = &[_][3]String{
-                .{ "Homestead", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.homesteadBlock}) else "inactive", "na" },
-                .{ "DAO", if (self.homesteadBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.daoForkBlock}) else "inactive", "na" },
-                .{ "Byzantium", if (self.byzantiumBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.byzantiumBlock}) else "inactive", "na" },
-                .{ "Constantinople", if (self.constantinopleBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.constantinopleBlock}) else "inactive", "na" },
-                .{ "Petersburg", if (self.petersburgBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.petersburgBlock}) else "inactive", "na" },
-                .{ "Istanbul", if (self.istanbulBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.istanbulBlock}) else "inactive", "na" },
-                .{ "Muir Glacier", if (self.muirGlacierBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.muirGlacierBlock}) else "inactive", "na" },
-                .{ "Berlin", if (self.berlinBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.berlinBlock}) else "inactive", "na" },
-                .{ "London", if (self.londonBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.londonBlock}) else "inactive", "na" },
-                .{ "Arrow Glacier", if (self.arrowGlacierBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.arrowGlacierBlock}) else "inactive", "na" },
-                .{ "Gray Glacier", if (self.grayGlacierBlock != null) try std.fmt.allocPrint(allocator, "{any}", .{self.grayGlacierBlock}) else "inactive", "na" },
-                .{ "Shanghai", "na", if (self.shanghaiTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.shanghaiTime}) else "inactive" },
-                .{ "Cancun", "na", if (self.cancunTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.cancunTime}) else "inactive" },
-                .{ "Prague", "na", if (self.pragueTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.pragueTime}) else "inactive" },
-                .{ "Osaka", "na", if (self.osakaTime != null) try std.fmt.allocPrint(allocator, "{any}", .{self.osakaTime}) else "inactive" },
-            },
-            .mode = .box,
-        };
-        std.log.info("{}\n", .{table});
+        _ = self;
+        _ = allocator;
     }
 };
 

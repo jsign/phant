@@ -78,11 +78,18 @@ pub const Block = struct {
     header: BlockHeader,
     transactions: []Tx,
     uncles: []BlockHeader,
-    withdrawals: []Withdrawal,
+    withdrawals: ?[]Withdrawal = null,
 
     pub fn decode(arena: Allocator, rlp_bytes: []const u8) !Block {
         var block: Block = undefined;
         _ = try rlp.deserialize(Block, arena, rlp_bytes, &block);
+        // RLP workaround: zig-rlp decodes optional integer 0 (0x80) as null.
+        // For Cancun+ blocks (which have parent_beacon_root), excess_blob_gas
+        // and blob_gas_used are always present — null means 0, not absent.
+        if (block.header.parent_beacon_root != null or block.header.blob_gas_used != null or block.header.excess_blob_gas != null) {
+            if (block.header.excess_blob_gas == null) block.header.excess_blob_gas = 0;
+            if (block.header.blob_gas_used == null) block.header.blob_gas_used = 0;
+        }
         return block;
     }
 };

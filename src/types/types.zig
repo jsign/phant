@@ -27,3 +27,6 @@ pub const TxTypes = transaction.TxTypes;
 pub const LegacyTx = transaction.LegacyTx;
 pub const AccessListTx = transaction.AccessListTx;
 pub const MarketFeeTx = transaction.FeeMarketTx;
+pub const BlobTx = transaction.BlobTx;
+pub const SetCodeTx = transaction.SetCodeTx;
+pub const Authorization = transaction.Authorization;

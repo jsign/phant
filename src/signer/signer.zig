@@ -8,6 +8,7 @@ const types = @import("../types/types.zig");
 const rlp = @import("zig-rlp");
 const Address = @import("../types/types.zig").Address;
 const AccessListTuple = types.AccessListTuple;
+const Authorization = types.Authorization;
 const Tx = types.Tx;
 const Hash32 = types.Hash32;
 
@@ -32,7 +33,7 @@ pub const TxSigner = struct {
         const s = std.mem.readInt(u256, ecdsa_sig[32..64], std.builtin.Endian.big);
         const v = switch (tx) {
             Tx.LegacyTx => 35 + 2 * self.chain_id, // We sign using EIP155 since 2016.
-            Tx.AccessListTx, Tx.FeeMarketTx => 0,
+            Tx.AccessListTx, Tx.FeeMarketTx, Tx.BlobTx, Tx.SetCodeTx => @as(u64, 0),
         } + ecdsa_sig[64];
         return .{ .r = r, .s = s, .v = v };
     }
@@ -65,7 +66,7 @@ pub const TxSigner = struct {
                 std.mem.writeInt(u256, sig[32..64], itx.s, std.builtin.Endian.big);
                 break :blk @intCast(itx.y_parity);
             },
-            Tx.FeeMarketTx => |itx| blk: {
+            inline Tx.FeeMarketTx, Tx.BlobTx, Tx.SetCodeTx => |itx| blk: {
                 try ecdsa.validateSignatureFields(itx.r, itx.s);
 
                 std.mem.writeInt(u256, sig[0..32], itx.r, std.builtin.Endian.big);
@@ -84,7 +85,7 @@ pub const TxSigner = struct {
                 var out = std.array_list.Managed(u8).init(allocator);
                 defer out.deinit();
 
-                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest)) {
+                if (self.chain_id != @intFromEnum(config.ChainId.SpecTest) and itx.v != 27 and itx.v != 28) {
                     // Post EIP-155 (since ~Nov 2016).
                     const LegacyTxRLP = struct {
                         nonce: u64,
@@ -183,6 +184,68 @@ pub const TxSigner = struct {
                     .access_list = itx.access_list,
                 }, &out);
                 break :blk hasher.keccak256WithPrefix(&[_]u8{@intFromEnum(Tx.AccessListTx)}, out.items);
+            },
+            Tx.BlobTx => |itx| blk: {
+                const blobTxRLP = struct {
+                    chain_id: u64,
+                    nonce: u64,
+                    max_priority_fee_per_gas: u64,
+                    max_fee_per_gas: u256,
+                    gas: u64,
+                    to: ?Address,
+                    value: u256,
+                    data: []const u8,
+                    access_list: []AccessListTuple,
+                    max_fee_per_blob_gas: u256,
+                    blob_versioned_hashes: []Hash32,
+                };
+
+                var out = std.array_list.Managed(u8).init(allocator);
+                defer out.deinit();
+                try rlp.serialize(blobTxRLP, allocator, .{
+                    .chain_id = itx.chain_id,
+                    .nonce = itx.nonce,
+                    .max_priority_fee_per_gas = itx.max_priority_fee_per_gas,
+                    .max_fee_per_gas = itx.max_fee_per_gas,
+                    .gas = itx.gas,
+                    .to = itx.to,
+                    .value = itx.value,
+                    .data = itx.data,
+                    .access_list = itx.access_list,
+                    .max_fee_per_blob_gas = itx.max_fee_per_blob_gas,
+                    .blob_versioned_hashes = itx.blob_versioned_hashes,
+                }, &out);
+                break :blk hasher.keccak256WithPrefix(&[_]u8{@intFromEnum(Tx.BlobTx)}, out.items);
+            },
+            Tx.SetCodeTx => |itx| blk: {
+                const setCodeTxRLP = struct {
+                    chain_id: u64,
+                    nonce: u64,
+                    max_priority_fee_per_gas: u64,
+                    max_fee_per_gas: u256,
+                    gas: u64,
+                    to: Address,
+                    value: u256,
+                    data: []const u8,
+                    access_list: []AccessListTuple,
+                    authorization_list: []types.Authorization,
+                };
+
+                var out = std.array_list.Managed(u8).init(allocator);
+                defer out.deinit();
+                try rlp.serialize(setCodeTxRLP, allocator, .{
+                    .chain_id = itx.chain_id,
+                    .nonce = itx.nonce,
+                    .max_priority_fee_per_gas = itx.max_priority_fee_per_gas,
+                    .max_fee_per_gas = itx.max_fee_per_gas,
+                    .gas = itx.gas,
+                    .to = itx.to,
+                    .value = itx.value,
+                    .data = itx.data,
+                    .access_list = itx.access_list,
+                    .authorization_list = itx.authorization_list,
+                }, &out);
+                break :blk hasher.keccak256WithPrefix(&[_]u8{@intFromEnum(Tx.SetCodeTx)}, out.items);
             },
         };
     }
