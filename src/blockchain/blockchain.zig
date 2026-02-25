@@ -397,8 +397,11 @@ pub const Blockchain = struct {
             std.log.err("NotEnoughBalance: sender={x} balance={d}, gas_fee={d}, value={d}, total_needed={d}, nonce={d}", .{ &env.origin, sender_account.balance, gas_fee, tx.getValue(), gas_fee + tx.getValue() + blob_gas_cost, sender_account.nonce });
             return error.NotEnoughBalance;
         }
-        if (sender_account.code.len > 0)
-            return error.SenderIsNotEOA;
+        // EIP-7702: sender with delegation code (0xef0100 prefix) is treated as EOA.
+        if (sender_account.code.len > 0) {
+            if (sender_account.code.len != 23 or !std.mem.eql(u8, sender_account.code[0..3], &params.delegation_magic))
+                return error.SenderIsNotEOA;
+        }
 
         const gas = tx.getGasLimit() - calculateIntrinsicCost(tx);
         const effective_gas_fee = tx.getGasLimit() * env.gas_price;
@@ -441,6 +444,9 @@ pub const Blockchain = struct {
         if (tx == .SetCodeTx) {
             const ecdsa_signer = @import("../crypto/crypto.zig").ecdsa.Signer.init() catch unreachable;
             for (tx.SetCodeTx.authorization_list) |auth| {
+                // EIP-2681: nonce must not overflow u64. Check BEFORE ecrecover.
+                if (auth.nonce == std.math.maxInt(u64)) continue;
+
                 // Recover authority address from authorization signature.
                 const authority = recoverAuthority(allocator, ecdsa_signer, auth, @intFromEnum(env.chain_id)) catch |err| {
                     std.log.debug("EIP-7702: auth recovery failed: {}", .{err});
@@ -453,15 +459,15 @@ pub const Blockchain = struct {
                 // Add authority to accessed addresses (even if auth is invalid, per EIP-7702).
                 try env.state.putAccessedAccount(authority);
 
-                // Verify authority nonce matches.
-                const authority_account = env.state.getAccount(authority);
-                if (authority_account.nonce != auth.nonce) continue;
-
                 // Verify authority code is empty or already a delegation.
+                const authority_account = env.state.getAccount(authority);
                 if (authority_account.code.len > 0) {
                     if (authority_account.code.len != 23) continue;
                     if (!std.mem.eql(u8, authority_account.code[0..3], &params.delegation_magic)) continue;
                 }
+
+                // Verify authority nonce matches.
+                if (authority_account.nonce != auth.nonce) continue;
 
                 // If authority already exists in state, refund the new account cost difference.
                 // Intrinsic gas charges CallNewAccountGas (25000), but existing accounts
@@ -473,12 +479,19 @@ pub const Blockchain = struct {
                 // Increment authority nonce.
                 try env.state.incrementNonce(authority);
 
-                // Set delegation code: 0xef0100 || address.
-                var delegation_code: [23]u8 = undefined;
-                @memcpy(delegation_code[0..3], &params.delegation_magic);
-                @memcpy(delegation_code[3..23], &auth.address);
-                try env.state.setDelegationCode(authority, &delegation_code);
-                std.log.debug("EIP-7702: set delegation on 0x{x} -> 0x{x}", .{ authority, auth.address });
+                // EIP-7702: if auth.address is zero, clear the delegation (reset to EOA).
+                // Otherwise, set delegation code: 0xef0100 || address.
+                const zero_addr: Address = .{0} ** 20;
+                if (std.mem.eql(u8, &auth.address, &zero_addr)) {
+                    try env.state.setDelegationCode(authority, &.{});
+                    std.log.debug("EIP-7702: cleared delegation on 0x{x}", .{authority});
+                } else {
+                    var delegation_code: [23]u8 = undefined;
+                    @memcpy(delegation_code[0..3], &params.delegation_magic);
+                    @memcpy(delegation_code[3..23], &auth.address);
+                    try env.state.setDelegationCode(authority, &delegation_code);
+                    std.log.debug("EIP-7702: set delegation on 0x{x} -> 0x{x}", .{ authority, auth.address });
+                }
             }
         }
 
